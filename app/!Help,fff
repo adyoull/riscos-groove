@@ -1,0 +1,89 @@
+Groove 0.2 for RISC OS
+======================
+
+A music studio: drag loops into a song, play instruments
+from the computer keyboard, draw beats and notes, record, and export a WAV.
+Groove's own sounds are synthesised live: no samples to load.
+
+Starting
+  Double-click !Groove: it opens a new song (a drum track and a piano,
+  ready to play) and the loops. Select on its icon bar icon opens the
+  song window again; Adjust opens the loops. The icon bar menu has Info,
+  Help, the User guide, the windows, New song and Quit.
+
+User guide
+  The full guide, with pictures, is !Groove.Guide.index/html: choose
+  User guide from the icon bar menu to open it in your web browser.
+
+The song window
+  Toolbar   rewind, play/stop, record, cycle; bar.beat; tempo (Adjust =
+            10 at a time); key; metronome; zoom; Loops, Edit, Keys;
+            Vol, the master volume.
+  Tracks    M mute, S solo, R record-arm; volume and pan sliders. Drag a
+            track's name up or down to move it. Track > Rename in the
+            menu names it. Tracks are coloured by kind of instrument.
+            A song can have up to 16 tracks.
+  Regions   drag to move, drag the right end to loop it longer; click to
+            select (Delete removes it), double-click to edit. Double-click
+            an empty track to make a new region. Ctrl-T splits the
+            selected region at the playhead; Ctrl-C / Ctrl-V copy it and
+            paste it at the playhead.
+  Ruler     Select to move the playhead; Adjust-drag sets the cycle.
+  The scroll bar along the bottom (or Shift + the scroll wheel) moves
+  along the song; the track names stay put.
+
+Keys (in any Groove window)
+  Space     play / stop          R          record
+  Return    back to the start    Left/Right a bar back / on
+  A W S E D F T G Y H U J K O L P ;   play notes (A is C)
+  Z / X     octave down / up     C / V      velocity down / up
+  Ctrl-Z    undo                 Ctrl-Y     redo
+  F7 loops  F8 editor  F9 keyboard  Ctrl-S save
+
+Time signature
+  Menu > Song > Time signature: 2/4 to 12/8, from the bar the playhead
+  is in. The ruler shows where it changes; bars, the metronome and the
+  count-in follow it.
+
+Recording
+  R counts in a bar first (Count-in in the main menu turns this off).
+  With Merge recordings ticked, what you record over a region goes into
+  it, instead of into a new region.
+
+The editor
+  Drums: Select turns a step on or off (drag along a row to paint);
+  Adjust accents it. Piano roll: Select draws a note (drag to lengthen) or
+  moves one; Adjust deletes. Shift-click adds a note to the selection, and
+  Shift-drag on empty space selects with a box; drag a selected note to
+  move them all. With notes selected: Up/Down transpose (with Shift, an
+  octave), Ctrl-Up/Down louder/softer, Delete, Ctrl-C / Ctrl-V copy and
+  paste (at the playhead), Ctrl-A selects all, Escape none. Brighter
+  notes are louder. The coloured button changes the instrument or kit.
+
+SoundFont sounds (with !SoftMIDI)
+  If !SoftMIDI is installed (from PackMan), Track > Sound (or the
+  editor's sound button) also offers SoundFont > family > instrument, and
+  SoundFont kits for drum tracks: the 128 General MIDI sounds of
+  !SoftMIDI's SoundFont. It loads the first time you choose one (a few
+  seconds). Without !SoftMIDI those tracks play Groove's nearest sound.
+
+Files
+  Save (Ctrl-S or Menu > Song > Save), Export as WAV and Export as MIDI
+  use a normal save box: drag the icon to a directory. Drop a song, a WAV,
+  a MIDI file or Maestro music on Groove's icon or song window to load or
+  import it (MIDI and Maestro files become a track per part or channel,
+  from the bar you drop them on).
+
+Maestro music
+  Groove plays Maestro files as Maestro does: clefs, key signatures,
+  accidentals to the end of the bar, ties, dots, each channel's volume and
+  stereo position, and (into an empty song) the tempo, key and time
+  signatures. Each channel's voice gets the nearest SoundFont sound.
+
+Requirements: RISC OS 5 on an ARMv7 machine with VFP (a Raspberry Pi 2 or
+later); SharedUnixLibrary 1.16 or later and ARMEABISupport from PackMan.
+Recommended: SoftMIDI from PackMan, for SoundFont sounds.
+
+Licence: Groove is MIT licensed (Copyright (c) 2026 Andrew Youll).
+Other notices: see the Licences directory inside !Groove (Shift-double-click
+!Groove to open it).

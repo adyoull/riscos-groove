@@ -1,0 +1,3 @@
+| !Boot for !Groove: the Filer runs this when it first sees the application
+If "<Groove$Dir>"="" Then Set Groove$Dir <Obey$Dir>
+IconSprites <Obey$Dir>.!Sprites

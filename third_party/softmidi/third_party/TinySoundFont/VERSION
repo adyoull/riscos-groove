@@ -1,0 +1,6 @@
+Upstream: https://github.com/schellingb/TinySoundFont commit 853a0a171759f1ddba0de1442133a75912bbeffa (unmodified)
+
+Note for updating: src/midisynth.c uses some of TinySoundFont's private
+voice data (see "TinySoundFont internals" there). After updating, check
+that section still means the same, and run "make test". If the sound
+changes on purpose, "make test-update" records the new reference.

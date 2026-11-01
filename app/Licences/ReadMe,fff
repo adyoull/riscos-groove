@@ -1,0 +1,29 @@
+Licences for !Groove
+====================
+
+Groove is by Andrew Youll, under the MIT licence: see Groove.
+Its source is published with it (groove-0.2-source.zip).
+
+Groove's !RunImage includes these other people's work, linked into it:
+
+  libmidisynth   SoftMIDI's library (SoundFont sounds).
+                 MIT licence: libmidisynth.
+  TinySoundFont  by Bernhard Schelling, based on SFZero by Steve Folta
+                 (plays the SoundFont). MIT licence: TinySoundFt.
+  stb_vorbis     by Sean Barrett (decodes SF3 SoundFonts).
+                 Public domain or MIT licence: stb_vorbis.
+  UnixLib        the C library, by the UnixLib Developers (GCCSDK),
+                 with riscos-unixlib's changes. Mainly the revised BSD
+                 licence, with some parts under the LGPL: UnixLib. Because
+                 UnixLib is linked into Groove, Groove's source is
+                 available, so it can be rebuilt with another UnixLib.
+  libgcc         GCC's runtime library: GPL with the GCC Runtime Library
+                 Exception, which places no conditions on Groove.
+
+Credit
+  Groove's reverb is a Freeverb-style design, using Freeverb's delay
+  lengths. Freeverb is by Jezar at Dreampoint and is public domain.
+
+Not included
+  SoundFont sounds use the SoundFont that !SoftMIDI installs (its own
+  licence is in !SoftMIDI). Groove doesn't contain a SoundFont.

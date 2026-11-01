@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Groove User Guide</title>
+<style>
+:root { --ink:#1d1d1f; --paper:#fffdf7; --accent:#c0392b; --soft:#f3efe4; --line:#d9d2bf;
+        --tip:#2f7d4f; --rem:#2a5d9f; --warn:#b3261e; --tech:#6b4fa0; --try:#9a6a00; }
+body { margin:0; background:var(--paper); color:var(--ink); font-family: "Homerton", "Helvetica Neue", Arial, sans-serif;
+       line-height:1.55; font-size:17px; }
+main { max-width:860px; margin:0 auto; padding:16px 18px 80px; }
+header.cover { background:#2b2140; color:#fff; padding:40px 18px 34px; }
+header.cover div { max-width:860px; margin:0 auto; }
+header.cover h1 { font-size:2.4em; margin:0 0 6px; letter-spacing:-0.5px; }
+header.cover p { margin:4px 0; font-size:1.1em; color:#e9e3f5; }
+header.cover .badge { display:inline-block; background:#f2b134; color:#2b2140; font-weight:bold; padding:3px 10px;
+                      border-radius:3px; margin-top:12px; }
+h2.part { margin-top:56px; padding:12px 14px; background:#2b2140; color:#fff; font-size:1.5em; border-radius:4px; }
+h2.part small { display:block; font-size:0.6em; font-weight:normal; color:#d6cdea; }
+h3.chapter { margin-top:40px; font-size:1.35em; border-bottom:3px solid var(--accent); padding-bottom:4px; }
+h3.chapter span { color:var(--accent); }
+h4 { margin:26px 0 6px; font-size:1.08em; }
+p.intro { font-style:italic; color:#4a4a4a; }
+figure { margin:18px 0; text-align:center; }
+figure img { max-width:100%; height:auto; border:1px solid var(--line); box-shadow:0 2px 6px rgba(0,0,0,0.12); }
+figcaption { font-size:0.88em; color:#555; margin-top:6px; }
+.box { border-left:6px solid; background:var(--soft); padding:10px 14px 10px 14px; margin:18px 0; border-radius:0 4px 4px 0; }
+.box b.label { display:block; font-size:0.85em; letter-spacing:1px; margin-bottom:2px; }
+.tip { border-color:var(--tip); } .tip b.label { color:var(--tip); }
+.rem { border-color:var(--rem); } .rem b.label { color:var(--rem); }
+.warn { border-color:var(--warn); } .warn b.label { color:var(--warn); }
+.tech { border-color:var(--tech); } .tech b.label { color:var(--tech); }
+.try { border-color:var(--try); background:#fbf4e2; } .try b.label { color:var(--try); }
+kbd { font-family:inherit; font-size:0.9em; background:#fff; border:1px solid #aaa; border-bottom-width:2px;
+      border-radius:3px; padding:0 5px; white-space:nowrap; }
+code { font-family: "Corpus", "Courier New", monospace; font-size:0.92em; background:#f0ece0; padding:0 3px; }
+table { border-collapse:collapse; width:100%; margin:14px 0; font-size:0.95em; }
+th, td { border:1px solid var(--line); padding:6px 8px; text-align:left; vertical-align:top; }
+th { background:var(--soft); }
+ol.steps li { margin-bottom:6px; }
+nav.toc { background:var(--soft); border:1px solid var(--line); padding:6px 18px 12px; border-radius:4px; }
+nav.toc ul { padding-left:20px; margin:4px 0; }
+nav.toc li { margin:2px 0; }
+.small { font-size:0.88em; color:#555; }
+a { color:#1f5fa8; }
+</style>
+</head>
+<body>
+<header class="cover">
+<div>
+<h1>Groove User Guide</h1>
+<p>Making music on RISC OS</p>
+<p>Start here if you've never made music on a computer before. If you have, the Technical Stuff boxes and Chapter 19 are for you.</p>
+<span class="badge">Groove 0.2</span>
+</div>
+</header>
+<main>
+
+<nav class="toc">
+<h3>Contents</h3>
+<ul>
+<li><a href="#intro">Introduction</a></li>
+<li><a href="#part1">Part I: Getting Started</a>
+<ul><li><a href="#ch1">1. What Groove does</a></li><li><a href="#ch2">2. Installing and starting</a></li><li><a href="#ch3">3. Finding your way round the screen</a></li></ul></li>
+<li><a href="#part2">Part II: Making Music</a>
+<ul><li><a href="#ch4">4. Loops: your first song in five minutes</a></li><li><a href="#ch5">5. Playing your song</a></li><li><a href="#ch6">6. Arranging regions</a></li><li><a href="#ch7">7. Drums: the step grid</a></li><li><a href="#ch8">8. Notes: the piano roll</a></li><li><a href="#ch9">9. Playing from the computer keyboard</a></li><li><a href="#ch10">10. Recording what you play</a></li></ul></li>
+<li><a href="#part3">Part III: Sounds and the Mix</a>
+<ul><li><a href="#ch11">11. Tracks and the mix</a></li><li><a href="#ch12">12. Choosing sounds, including SoundFont sounds</a></li></ul></li>
+<li><a href="#part4">Part IV: Files</a>
+<ul><li><a href="#ch13">13. Saving and opening songs</a></li><li><a href="#ch14">14. Exporting a WAV file</a></li><li><a href="#ch15">15. MIDI files and Maestro music</a></li><li><a href="#ch16">16. Using your own recordings</a></li></ul></li>
+<li><a href="#part5">Part V: The Part of Tens</a>
+<ul><li><a href="#ch17">17. Ten keys to learn first</a></li><li><a href="#ch18">18. Ten problems and what to do about them</a></li><li><a href="#ch19">19. Ten things for experienced users</a></li></ul></li>
+<li><a href="#appA">Appendix: keys, mouse and menus</a></li>
+</ul>
+</nav>
+
+<!-- ======================================================================= -->
+<h2 class="part" id="intro">Introduction</h2>
+
+<p>Groove is a music studio for RISC OS. You drag ready-made loops into a song, draw drum beats on a grid, play tunes on your computer keyboard and record them, and then save the result as a WAV file you can play anywhere.</p>
+<p>You don't need to read music or play an instrument. If you can drag a file and press keys, you can make a song with Groove.</p>
+
+<h4>About this guide</h4>
+<p>The guide comes with Groove: choose <b>User guide</b> from the menu on Groove's icon bar icon, and it opens in your web browser (NetSurf, for example). If no web browser is set up, Groove tells you so. The file itself is <code>!Groove.Guide.index/html</code>, if you'd rather open it yourself.</p>
+<p>You don't need to read it in order. If all you want is a drum beat, go to <a href="#ch7">Chapter 7</a>. If you're new to music software, start at <a href="#part1">Part I</a> and do the <b>Try it</b> examples as you go. By the end of <a href="#ch5">Chapter 5</a> you'll have made and played your first song.</p>
+<p>The pictures are screenshots of Groove running on RISC OS 5.</p>
+
+<h4>This is an early version</h4>
+<p>Groove 0.2 is an early version. It's still being tested, so you may come across bugs. If you change something by mistake, <kbd>Ctrl</kbd>+<kbd>Z</kbd> (Undo) takes it back (<a href="#ch3">Chapter 3</a>), but save your song now and then as well (<a href="#ch13">Chapter 13</a>).</p>
+
+<h4>What we assume you know</h4>
+<p>Not much. You should know the three mouse buttons (<b>Select</b> on the left, <b>Menu</b> in the middle, <b>Adjust</b> on the right), and how to drag a file from a Filer window into a program. You don't need to know anything about music.</p>
+
+<h4>The boxes in this guide</h4>
+<div class="box tip"><b class="label">TIP</b>A quicker or easier way to do something.</div>
+<div class="box rem"><b class="label">REMEMBER</b>Worth keeping in mind as you work.</div>
+<div class="box warn"><b class="label">WARNING</b>Get this wrong and you could lose work, or time.</div>
+<div class="box tech"><b class="label">TECHNICAL STUFF</b>How it works underneath. You can skip these.</div>
+<div class="box try"><b class="label">TRY IT</b>A short exercise to do as you read.</div>
+
+<h4>Where to start</h4>
+<p>If Groove isn't installed yet, start at <a href="#ch2">Chapter 2</a>. If it is, go to <a href="#ch3">Chapter 3</a>. The <a href="#appA">Appendix</a> lists every key, mouse action and menu on one page; it's worth printing.</p>
+
+<!-- ======================================================================= -->
+<h2 class="part" id="part1">Part I: Getting Started<small>Installing Groove and finding your way round</small></h2>
+
+<h3 class="chapter" id="ch1"><span>1</span> What Groove does</h3>
+
+<p>Groove is a small music studio. A <b>song</b> is made of <b>tracks</b>, one above another, all playing at the same time: a drum track, a bass track, a piano track and so on. On each track you place <b>regions</b>: blocks of music that start at a certain bar. Most regions hold notes; an audio region holds a recording.</p>
+
+<h4>What you can do with it</h4>
+<ul>
+<li><b>Loops:</b> 18 ready-made loops (drums, bass, keys and lead) that you drag into your song. They're played in your song's key.</li>
+<li><b>Drums:</b> draw a beat on a grid of eight drums and sixteen steps a bar. Two drum kits.</li>
+<li><b>Notes:</b> draw, move and delete notes in a piano roll; select several to move, copy, transpose or make louder together.</li>
+<li><b>Musical typing:</b> play your computer keyboard like a piano, chords included.</li>
+<li><b>Recording:</b> record what you play, after a bar of clicks to get ready; Groove tidies the timing for you.</li>
+<li><b>Arranging:</b> move, stretch, split, copy and paste regions; rename and reorder tracks.</li>
+<li><b>Undo:</b> take back changes, up to 100 of them, and redo them again.</li>
+<li><b>Seven instruments</b> of Groove's own: Electric Piano, Synth Bass, Warm Pad, Square Lead, Plucked Guitar, Drawbar Organ and Glass Bells.</li>
+<li><b>SoundFont sounds:</b> with !SoftMIDI installed, any track can use one of 128 General MIDI instruments or 8 drum kits instead.</li>
+<li><b>Mixing:</b> volume, pan, mute and solo for each track, a master volume, and a touch of reverb.</li>
+<li><b>Files:</b> save songs; export a WAV of your song; import and export MIDI files; play Maestro music; bring in WAV recordings.</li>
+<li><b>Any time signature:</b> 3/4, 6/8 and the rest, changing part-way through a song if you like.</li>
+</ul>
+
+<h4>What you need</h4>
+<table>
+<tr><th>You need</th><th>Because</th></tr>
+<tr><td>RISC OS 5 on a Raspberry Pi 2 or later (an ARMv7 processor with VFP)</td><td>Groove is built for these processors.</td></tr>
+<tr><td>SharedUnixLibrary 1.16 or later, and ARMEABISupport</td><td>Groove uses them. You can get both through PackMan. Groove checks for them when it starts.</td></tr>
+<tr><td>SharedSound</td><td>For sound. It comes with RISC OS 5.</td></tr>
+<tr><td>!SoftMIDI (optional)</td><td>Only for SoundFont sounds (<a href="#ch12">Chapter 12</a>). Everything else works without it.</td></tr>
+<tr><td>A web browser such as NetSurf (optional)</td><td>Only for reading this guide from Groove's menu.</td></tr>
+</table>
+
+<div class="box tech"><b class="label">TECHNICAL STUFF</b>Groove's own instruments and drums are synthesised as you play: there are no sample files to load, which is why a song file is only a few kilobytes. Sound is made 44,100 times a second in stereo and handed to RISC OS through SharedSound, so Groove mixes happily with other programs' sound.</div>
+
+<h3 class="chapter" id="ch2"><span>2</span> Installing and starting</h3>
+
+<h4>Installing</h4>
+<ol class="steps">
+<li>Unzip <code>Groove.zip</code> with SparkFS or PackMan's unzip, so the files keep their RISC OS file types.</li>
+<li>Drag <b>!Groove</b> to wherever you keep your applications, for example your <code>Apps</code> directory.</li>
+<li>If you want SoundFont sounds, install <b>!SoftMIDI</b> as well, and open the directory it's in once, so the Filer sees it.</li>
+</ol>
+
+<h4>Starting</h4>
+<p>Double-click <b>!Groove</b>. Groove puts its icon on the icon bar and opens straight into a new song: the <b>song window</b> across the top of the screen and the <b>Loops</b> window on the right. The new song has two empty tracks, <b>Drums</b> and <b>Electric Piano</b>, ready to play.</p>
+
+<figure><img src="images/start-screen.png" alt="Groove just after starting"><figcaption>Groove just after starting: the song window and the Loops window.</figcaption></figure>
+
+<h4>The icon bar icon</h4>
+<p>If you close Groove's windows, Groove keeps running. Click <b>Select</b> on its icon bar icon to open the song window again, or <b>Adjust</b> to open the Loops window.</p>
+<p>Click <b>Menu</b> on the icon for the icon bar menu:</p>
+<figure><img src="images/iconbar-menu.png" alt="The icon bar menu"><figcaption>The icon bar menu.</figcaption></figure>
+<table>
+<tr><th>Item</th><th>What it does</th></tr>
+<tr><td>Info</td><td>Move to the arrow to see the Info box: the program's name, purpose, author and version.</td></tr>
+<tr><td>Help...</td><td>Opens Groove's short <code>!Help</code> file.</td></tr>
+<tr><td>User guide</td><td>Opens this guide in your web browser. If none is set up, Groove says so (opening an HTML page without one would show you its source in a text editor).</td></tr>
+<tr><td>Song window, Loop browser</td><td>Open those windows.</td></tr>
+<tr><td>New song</td><td>Starts a new song (asking first if the current one has unsaved changes).</td></tr>
+<tr><td>Quit</td><td>Quits Groove.</td></tr>
+</table>
+<figure><img src="images/info-box.png" alt="The Info box"><figcaption>The Info box.</figcaption></figure>
+
+<h4>Quitting</h4>
+<p>Choose <b>Quit</b> from the icon bar menu. If your song has changes you haven't saved, Groove asks first.</p>
+
+<div class="box warn"><b class="label">WARNING</b>Closing the song window doesn't save your song or quit Groove: the song is still there when you open the window again from the icon bar. Your song is only gone when you choose <b>Quit</b>, or <b>Song &rarr; New</b>, and Groove asks first in both cases.</div>
+
+<h3 class="chapter" id="ch3"><span>3</span> Finding your way round the screen</h3>
+
+<p>Groove's windows are laid out to fill the screen, together working like one big window. You can move and resize any of them; Groove remembers where you put each one while it's running.</p>
+
+<table>
+<tr><th>Window</th><th>What it's for</th><th>How to open it</th></tr>
+<tr><td><b>Song window</b></td><td>Your song: tracks down the left, time running left to right.</td><td>Opens at start; Select on the icon bar icon.</td></tr>
+<tr><td><b>Loops</b></td><td>Ready-made loops to drag into your song.</td><td>Opens at start; <kbd>F7</kbd>, or the <b>Loops</b> button.</td></tr>
+<tr><td><b>Editor</b></td><td>The notes in one region: a drum grid or a piano roll.</td><td><kbd>F8</kbd>, the <b>Edit</b> button, or double-click a region.</td></tr>
+<tr><td><b>Keyboard</b></td><td>Shows the keys for musical typing; you can click its keys too.</td><td><kbd>F9</kbd>, the <b>Keys</b> button, or <b>Musical typing</b> in the main menu.</td></tr>
+</table>
+
+<h4>The toolbar</h4>
+<figure><img src="images/toolbar.png" alt="The toolbar"><figcaption>The toolbar along the top of the song window.</figcaption></figure>
+<p>From left to right:</p>
+<table>
+<tr><th>Button</th><th>What it does</th></tr>
+<tr><td>Rewind</td><td>Back to the start of the song.</td></tr>
+<tr><td>Play / Stop</td><td>Plays the song, or stops it. Same as <kbd>Space</kbd>.</td></tr>
+<tr><td>Record (red dot)</td><td>Records what you play (<a href="#ch10">Chapter 10</a>). Same as <kbd>R</kbd>.</td></tr>
+<tr><td>Cycle (arrow)</td><td>Turns cycle on and off: playing goes round and round a few bars (<a href="#ch5">Chapter 5</a>). Orange when on.</td></tr>
+<tr><td>Display</td><td>Where the playhead is, as <i>bar . beat</i>. It also shows PLAY, REC, or COUNT while Groove counts you in to a recording.</td></tr>
+<tr><td><b>&minus;</b> 110 bpm <b>+</b></td><td>The tempo, in beats per minute (40 to 240). <b>&minus;</b> and <b>+</b> change it by 1, or by 10 with Adjust. Clicking the number itself adds 5 (Adjust takes 5 away).</td></tr>
+<tr><td>Key (C)</td><td>The song's key. Select moves it up a semitone, Adjust down. Loops you add after that are played in the new key.</td></tr>
+<tr><td>Metronome</td><td>Turns the click on and off. It clicks on every beat while you play or record, a higher click on the first beat of each bar.</td></tr>
+<tr><td><b>&minus;</b> <b>+</b> (zoom)</td><td>Zooms out and in on the timeline.</td></tr>
+<tr><td>Loops, Edit, Keys</td><td>Open the Loops, Editor and Keyboard windows. They're lit while that window is open.</td></tr>
+<tr><td>Vol</td><td>The master volume: how loud the whole song is, in Groove and in exported WAVs. Drag the slider.</td></tr>
+<tr><td>The words on the right</td><td>A reminder of the main keys: <kbd>Space</kbd> play/stop, <kbd>R</kbd> record, <kbd>A</kbd> to <kbd>K</kbd> play notes, <kbd>Z</kbd>/<kbd>X</kbd> octave.</td></tr>
+</table>
+
+<h4>Tracks and the timeline</h4>
+<p>Each track has a <b>header</b> on the left with its name and controls (see <a href="#ch11">Chapter 11</a>). To its right is the <b>timeline</b>, with the bar numbers along the <b>ruler</b> at the top. The white line with a triangle on the ruler is the <b>playhead</b>: where playing starts. The song is 16 bars long to begin with; the timeline is darker past the end of the song.</p>
+<p>The window's title is the song's name (<b>&lt;Untitled&gt;</b> until you save it), with a <b>*</b> after it when there are changes you haven't saved.</p>
+<p>Tracks are coloured by what they play: drums yellow, recordings blue, and instruments by their kind (keyboards green, basses purple, leads pink, guitars orange and so on). Regions and loops take their track's colour.</p>
+<p>Below the tracks, <b>New track:</b> has three buttons, <b>Drums</b>, <b>Keys</b> and <b>Audio</b>, for adding an empty track. A song can have up to 16 tracks; the song window scrolls to show them all.</p>
+
+<p>To see more of a long song, use the scroll bar along the bottom of the song window: drag it, or click its arrows, to move along the song. The track names on the left stay where they are. The scroll bar's length matches the song at the zoom you're using, and it moves by itself when the song window follows the playhead.</p>
+
+<div class="box tip"><b class="label">TIP</b>The mouse wheel scrolls the tracks up and down. Hold <kbd>Shift</kbd> as you turn it to move along the song instead.</div>
+
+<h4>Changed your mind? Undo</h4>
+<p>Press <kbd>Ctrl</kbd>+<kbd>Z</kbd>, or choose <b>Undo</b> from the main menu, to take back your last change: a moved region, a deleted track, a recording, a change of tempo, notes you drew. Press it again to go further back, up to 100 changes. <kbd>Ctrl</kbd>+<kbd>Y</kbd> (<b>Redo</b>) puts back what you undid. If you undo all the way back to when you last saved, the <b>*</b> goes from the title.</p>
+<p>Undo covers changes to the song. Playing, moving the playhead and arming a track for recording aren't changes, so Undo leaves them alone.</p>
+<div class="box rem"><b class="label">REMEMBER</b>As soon as you make a new change after undoing, the changes you undid can't be redone any more. Undo is also cleared when you open another song or start a new one.</div>
+
+<!-- ======================================================================= -->
+<h2 class="part" id="part2">Part II: Making Music<small>Loops, beats, notes and recording</small></h2>
+
+<h3 class="chapter" id="ch4"><span>4</span> Loops: your first song in five minutes</h3>
+
+<p>The <b>Loops</b> window lists 18 short pieces of music, grouped as Drums, Bass, Keys and Lead, with each one's length in bars. Loops are the quickest way to start a song.</p>
+
+<h4>Listening to a loop</h4>
+<p>Click a loop's name. It plays over and over, and its row is highlighted. Click it again to stop it, or click another loop to hear that one instead. Pressing Play stops it too.</p>
+<figure><img src="images/loop-preview.png" alt="A loop being previewed"><figcaption>Four on the Floor playing in the Loops window.</figcaption></figure>
+
+<h4>Putting a loop into your song</h4>
+<ol class="steps">
+<li>Drag the loop's name out of the Loops window.</li>
+<li>Drop it on a track in the song window, at the bar where you want it to start. It snaps to the nearest bar.</li>
+</ol>
+<p>Drop a drum loop on a drum track, and a bass, keys or lead loop on an instrument track. If you drop a loop below the tracks, or on a track of the wrong kind, Groove makes a new track for it with a suitable sound.</p>
+
+<figure><img src="images/loops-dropped.png" alt="Three loops in the song"><figcaption>Boom Bap on the drums, Pop Chords on the piano, and Root Pump dropped below the tracks, which made a new Synth Bass track.</figcaption></figure>
+
+<h4>Making a loop play for longer</h4>
+<p>A loop goes into the song at its own length, but you can make it repeat. Move the pointer to the <b>right-hand end</b> of the region (the last few pixels), then drag to the right. The region's notes repeat to fill it. The end snaps to the start of a bar: "stretch it to bar 5" means it ends where bar 5 begins, under the 5 on the ruler.</p>
+<figure><img src="images/region-stretched.png" alt="A region stretched to four bars"><figcaption>The one-bar Boom Bap stretched to four bars: the beat repeats.</figcaption></figure>
+
+<div class="box try"><b class="label">TRY IT</b>Make a song in five minutes. Drag <b>Boom Bap</b> onto the Drums track at bar 1, then stretch it so it ends where bar 5 begins. Drag <b>Pop Chords</b> (four bars long) onto the Electric Piano track at bar 1. Drag <b>Root Pump</b> into the empty space below the tracks, also at bar 1, and stretch it to bar 5 too. Press <kbd>Return</kbd> to go to the start, then <kbd>Space</kbd> to listen.</div>
+
+<div class="box rem"><b class="label">REMEMBER</b>Loops are played in the key the song is set to <i>when you drop them</i>. If you change the key afterwards, the loops already in the song stay as they are; loops you add after that use the new key.</div>
+
+<h3 class="chapter" id="ch5"><span>5</span> Playing your song</h3>
+
+<p>Press <kbd>Space</kbd> or click <b>Play</b>. Playing starts at the playhead. The display shows the bar and beat, the playhead moves along, and the level meters under each track's name light up. Press <kbd>Space</kbd> again to stop.</p>
+
+<h4>Moving the playhead</h4>
+<ul>
+<li>Click (or drag) along the <b>ruler</b> with Select. The playhead snaps to beats.</li>
+<li><kbd>Return</kbd> or the Rewind button goes back to the start.</li>
+<li><kbd>&larr;</kbd> and <kbd>&rarr;</kbd> move a bar back or on.</li>
+</ul>
+<p>Playing stops by itself at the end of the song and goes back to the start.</p>
+
+<h4>Going round and round: cycle</h4>
+<p>Cycle plays the same few bars over and over, which is handy while you work on one part. Click the <b>Cycle</b> button to turn it on: an orange bar on the ruler shows which bars go round (bars 1 to 4 to begin with).</p>
+<p>To choose the bars, <b>drag with Adjust along the ruler</b> from the first bar you want to the bar after the last one. That turns cycle on as well.</p>
+<p>Cycle only goes round once the playhead is inside it. If the playhead is before the cycle, playing goes on until it reaches the cycle, then goes round. If it's after the cycle, playing just carries on: move the playhead to the start of the cycle first (click there on the ruler).</p>
+<figure><img src="images/cycle-playing.png" alt="Cycle on, playing"><figcaption>Playing with cycle on (the orange bar over bars 1 to 4) and the level meters under each track's name.</figcaption></figure>
+
+<h4>Tempo, key and metronome</h4>
+<p>The toolbar's tempo, key and metronome controls are described in <a href="#ch3">Chapter 3</a>. The tempo changes while you play, so you can try a few speeds.</p>
+
+<h4>Time signature</h4>
+<p>A new song is in 4/4: four beats a bar. For a waltz (3/4), a jig (6/8) or anything else, choose <b>Song &rarr; Time signature</b> from the main menu and pick one: 2/4, 3/4, 4/4, 5/4, 6/8, 7/8, 9/8 or 12/8. It applies from the bar the playhead is in, so put the playhead at the start to change the whole song, or further on to change part-way through.</p>
+<figure><img src="images/time-signature.png" alt="The Time signature menu"><figcaption>Song &rarr; Time signature, with 4/4 ticked.</figcaption></figure>
+<p>The ruler shows a time signature in orange next to the bar number where it starts (bar 1 shows one only if it isn't 4/4). Bars, the metronome, the count-in, the display's <i>bar . beat</i> and snapping all follow it. In 6/8 a beat is a quaver, so the metronome clicks six times a bar.</p>
+<div class="box tip"><b class="label">TIP</b>Choose the time signature before you add music. Changing it later moves the bar lines, but your regions stay where they are in time, so they may no longer start on a bar line. <kbd>Ctrl</kbd>+<kbd>Z</kbd> takes a change back.</div>
+
+<h4>Zooming and following</h4>
+<p>The zoom buttons widen or narrow the bars. Zooming keeps the playhead where it is on the screen, so you don't lose your place. While a song plays, the song window turns the page to keep the playhead in view; to stop that, untick <b>Follow playhead</b> in the main menu.</p>
+
+<div class="box tech"><b class="label">TECHNICAL STUFF</b>If a red <b>!</b> appears in the display, the sound ran dry for a moment: something kept the computer too busy to keep up. It's a warning, not an error: the song carries on.</div>
+
+<h3 class="chapter" id="ch6"><span>6</span> Arranging regions</h3>
+
+<p>Each block on a track is a <b>region</b>. Click a region to select it (it gets a white outline); the Editor shows its notes if it's open.</p>
+
+<table>
+<tr><th>To</th><th>Do this</th></tr>
+<tr><td>Move a region</td><td>Drag it with Select. It snaps to bars (to beats when you're zoomed well in). You can drag it to another track of the same kind.</td></tr>
+<tr><td>Make it longer or shorter</td><td>Drag its right-hand end. Notes repeat to fill a longer region.</td></tr>
+<tr><td>Copy it straight after itself</td><td>Select it, then <b>Region &rarr; Duplicate</b> in the main menu.</td></tr>
+<tr><td>Copy it somewhere else</td><td>Select it and press <kbd>Ctrl</kbd>+<kbd>C</kbd> (<b>Region &rarr; Copy</b>). Then put the playhead where you want the copy and press <kbd>Ctrl</kbd>+<kbd>V</kbd> (<b>Region &rarr; Paste</b>). It goes on the selected track if that's the right kind, otherwise on the first track that is. You can paste as many times as you like.</td></tr>
+<tr><td>Cut it in two</td><td>Select it, put the playhead where you want the cut, and press <kbd>Ctrl</kbd>+<kbd>T</kbd> (<b>Region &rarr; Split at playhead</b>). The right-hand part becomes a region of its own, and is selected.</td></tr>
+<tr><td>Delete it</td><td>Select it and press <kbd>Delete</kbd>, or choose <b>Region &rarr; Delete</b>.</td></tr>
+<tr><td>Edit its notes</td><td>Double-click it, or select it and press <kbd>F8</kbd>.</td></tr>
+<tr><td>Make a new, empty region</td><td>Double-click an empty part of a drum or instrument track. You get a one-bar region, open in the Editor, ready to fill.</td></tr>
+<tr><td>Select it without moving it</td><td>Click it with Adjust.</td></tr>
+</table>
+
+<figure><img src="images/split-paste.png" alt="A region split and pasted"><figcaption>Pop Chords split at bar 3, then its second half copied and pasted at bar 9.</figcaption></figure>
+<figure><img src="images/region-menu.png" alt="The Region menu"><figcaption>The main menu's Region submenu, with the keys for Split, Copy and Paste.</figcaption></figure>
+
+<div class="box tip"><b class="label">TIP</b>A duplicate shares its notes with the original until you edit one of them. When you change the notes in one, Groove gives it its own copy first, so the other stays as it was.</div>
+
+<h3 class="chapter" id="ch7"><span>7</span> Drums: the step grid</h3>
+
+<p>Double-click a region on a drum track and the Editor shows the <b>step grid</b>: a row for each of eight drums (Kick, Snare, Hi-hat, Open hat, Clap, Low tom, High tom and Cowbell) and sixteen <b>steps</b> per bar, so each step is a sixteenth note. A lit square is a drum hit.</p>
+<figure><img src="images/step-grid.png" alt="The step grid"><figcaption>The step grid for Boom Bap. Brighter squares are accented (louder) hits.</figcaption></figure>
+
+<ul>
+<li><b>Select</b> on a square turns the hit on or off. Keep the button down and drag along the row to paint (or rub out) several at once.</li>
+<li><b>Adjust</b> on an empty square adds an accented hit; Adjust on a hit switches it between accented and normal.</li>
+<li>Click a drum's name on the left to hear it.</li>
+<li>While the song plays, the step being played is highlighted.</li>
+</ul>
+
+<h4>The Editor's header</h4>
+<p>Across the top of the Editor are the region's name, then buttons:</p>
+<table>
+<tr><th>Button</th><th>What it does</th></tr>
+<tr><td>The coloured sound button (Studio Kit here)</td><td>Opens the Sound menu for the track (<a href="#ch12">Chapter 12</a>).</td></tr>
+<tr><td>1 bar, 2 bars, 4 bars</td><td>Sets the region's pattern length. Making it shorter deletes the notes past the new end. Making it longer repeats what's there: going from 1 bar to 2 copies bar 1 into bar 2.</td></tr>
+<tr><td>Clear</td><td>Removes every note in the region.</td></tr>
+</table>
+
+<div class="box tip"><b class="label">TIP</b>Pressed <b>Clear</b> by mistake? <kbd>Ctrl</kbd>+<kbd>Z</kbd> brings the notes back.</div>
+
+<div class="box try"><b class="label">TRY IT</b>Double-click an empty part of the Drums track to make a new region. Put a Kick on steps 1, 5, 9 and 13, a Snare on steps 5 and 13, and click a Hi-hat on every other step. To hear it over and over, drag with Adjust along the ruler over that one bar (so cycle goes round it), click the ruler at the start of the bar, and press <kbd>Space</kbd>.</div>
+
+<h3 class="chapter" id="ch8"><span>8</span> Notes: the piano roll</h3>
+
+<p>Double-click a region on an instrument track and the Editor shows the <b>piano roll</b>: a keyboard down the left, time across, and each note as a bar. The higher the bar, the higher the note; the longer, the longer it sounds. The roll runs from C1 to B7 and opens scrolled to where the notes are.</p>
+<figure><img src="images/piano-roll.png" alt="The piano roll"><figcaption>The piano roll for Pop Chords.</figcaption></figure>
+
+<ul>
+<li><b>Select</b> on an empty place draws a note one step long; keep the button down and drag right to make it longer.</li>
+<li><b>Select</b> on a note selects it (it gets a white outline); drag to move it, earlier or later and up or down. Notes snap to sixteenths.</li>
+<li><b>Adjust</b> on a note deletes it.</li>
+<li>Click the keyboard on the left to hear a note; drag up and down it to play a run.</li>
+</ul>
+<p>The header buttons are the same as for drums (<a href="#ch7">Chapter 7</a>). Brighter notes are louder ones.</p>
+
+<h4>Working with several notes</h4>
+<p>To change several notes at once, select them first:</p>
+<ul>
+<li><kbd>Shift</kbd>+click a note to add it to the selection (or take it out again).</li>
+<li>Hold <kbd>Shift</kbd> and drag across an empty part of the roll to draw a box: every note in it is selected.</li>
+<li><kbd>Ctrl</kbd>+<kbd>A</kbd> selects every note in the region; <kbd>Escape</kbd> selects none.</li>
+</ul>
+<figure><img src="images/note-selection.png" alt="Three notes selected"><figcaption>The second chord selected with a Shift-drag box. The header shows how many notes are selected and how loud they are.</figcaption></figure>
+<p>Then:</p>
+<table>
+<tr><th>To</th><th>Do this</th></tr>
+<tr><td>Move them</td><td>Drag any one of them: the rest go with it.</td></tr>
+<tr><td>Move them up or down</td><td><kbd>&uarr;</kbd> / <kbd>&darr;</kbd> a semitone; with <kbd>Shift</kbd>, an octave.</td></tr>
+<tr><td>Make them louder or softer</td><td><kbd>Ctrl</kbd>+<kbd>&uarr;</kbd> / <kbd>Ctrl</kbd>+<kbd>&darr;</kbd>.</td></tr>
+<tr><td>Delete them</td><td><kbd>Delete</kbd>.</td></tr>
+<tr><td>Copy them</td><td><kbd>Ctrl</kbd>+<kbd>C</kbd>, then <kbd>Ctrl</kbd>+<kbd>V</kbd>. The copies go where the playhead is, if it's inside this region (otherwise at the region's start), and are selected, so you can drag them where you want them.</td></tr>
+</table>
+<div class="box rem"><b class="label">REMEMBER</b>These keys work while the Editor has the input focus: click in it first. With no notes selected, <kbd>Delete</kbd> and <kbd>Ctrl</kbd>+<kbd>C</kbd> work on the selected region instead, as in the song window.</div>
+
+<h3 class="chapter" id="ch9"><span>9</span> Playing from the computer keyboard</h3>
+
+<p>Your computer keyboard plays the <b>selected track</b> (click a track's name to select it). Press <kbd>F9</kbd> to see the Keyboard window, which shows which key is which note and lights the keys you're holding. You don't need the window open to play.</p>
+<figure><img src="images/keyboard-chord.png" alt="The Keyboard window with a chord held"><figcaption>A, D and G held: a C major chord.</figcaption></figure>
+
+<table>
+<tr><th>Keys</th><th>What they play</th></tr>
+<tr><td><kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> <kbd>F</kbd> <kbd>G</kbd> <kbd>H</kbd> <kbd>J</kbd> <kbd>K</kbd> <kbd>L</kbd> <kbd>;</kbd></td><td>The white notes, from C (on <kbd>A</kbd>) upwards.</td></tr>
+<tr><td><kbd>W</kbd> <kbd>E</kbd> <kbd>T</kbd> <kbd>Y</kbd> <kbd>U</kbd> <kbd>O</kbd> <kbd>P</kbd></td><td>The black notes in between.</td></tr>
+<tr><td><kbd>Z</kbd> / <kbd>X</kbd></td><td>An octave down / up (up to three either way).</td></tr>
+<tr><td><kbd>C</kbd> / <kbd>V</kbd></td><td>Softer / louder (the velocity, in steps of 20).</td></tr>
+</table>
+<p>The Keyboard window's top line shows the track, which note <kbd>A</kbd> plays (C4 to begin with) and the velocity. Notes sound for as long as you hold the key, and you can hold several keys at once to play chords. You can also click the keys in the window with the mouse.</p>
+<p>On a <b>drum track</b>, <kbd>A</kbd> to <kbd>K</kbd> are the eight drums: <kbd>A</kbd> Kick, <kbd>S</kbd> Snare, <kbd>D</kbd> Hi-hat, <kbd>F</kbd> Open hat, <kbd>G</kbd> Clap, <kbd>H</kbd> Low tom, <kbd>J</kbd> High tom, <kbd>K</kbd> Cowbell (labelled Bell on the Keyboard window, for room).</p>
+
+<div class="box rem"><b class="label">REMEMBER</b>Groove only hears the keyboard when one of its windows has the input focus. It has the focus when it starts; if you've been typing in another program, click in the song window first. Some keys do other things too: <kbd>R</kbd> records, <kbd>Space</kbd> plays and stops.</div>
+
+<div class="box tech"><b class="label">TECHNICAL STUFF</b>RISC OS only sends programs two held keys at a time. While a note is held, Groove also reads the keyboard directly, so chords of three or more notes work. Some cheap keyboards can't report every combination of keys themselves; no program can get round that.</div>
+
+<h3 class="chapter" id="ch10"><span>10</span> Recording what you play</h3>
+
+<p>Recording puts what you play on the keyboard into a new region on the track.</p>
+<ol class="steps">
+<li>Click the name of the track you want to record on, to select it.</li>
+<li>Put the playhead in the bar where you want to start.</li>
+<li>Press <kbd>R</kbd> (or click the Record button). Groove counts you in with a bar of clicks, one a beat (in 4/4 the display counts down COUNT 4, 3, 2, 1), then recording starts from the beginning of that bar: the display shows REC, and the track's <b>R</b> button turns red.</li>
+<li>Play. A region called <b>Recording</b> grows as you go, and the rest of the song plays along with you.</li>
+<li>Press <kbd>R</kbd> again, or <kbd>Space</kbd>, to stop.</li>
+</ol>
+<figure><img src="images/count-in.png" alt="Counting in"><figcaption>Counting in: two clicks to go before recording starts at bar 5.</figcaption></figure>
+<figure><img src="images/recording.png" alt="Recording"><figcaption>Recording on the Electric Piano track from bar 5.</figcaption></figure>
+<p>When you stop, Groove moves each note you played to the nearest sixteenth, so small timing slips are tidied away. If you didn't play anything, no region is left behind. The track stays armed (its <b>R</b> stays red) for next time; click <b>R</b> to disarm it.</p>
+<figure><img src="images/recorded.png" alt="The recorded region"><figcaption>The finished Recording region, ready to edit in the piano roll.</figcaption></figure>
+
+<div class="box tip"><b class="label">TIP</b>Turn on the metronome first if you'd like a click to keep time with while you play. If you'd rather start straight away, without the count-in, untick <b>Count-in</b> in the main menu. Pressing <kbd>R</kbd> or <kbd>Space</kbd> during the count-in cancels the recording.</div>
+
+<h4>Recording over a region: Merge recordings</h4>
+<p>Normally each recording makes a new region, on top of anything already on the track. To add to a part instead (play the chords first, then the tune on top), tick <b>Merge recordings</b> in the main menu. Then notes you record over an existing region go into that region; only notes played where there was no region make a new one.</p>
+
+<div class="box tech"><b class="label">TECHNICAL STUFF</b>The <b>R</b> button on a track <i>arms</i> it for recording. If no track is armed when you press <kbd>R</kbd>, Groove arms the selected one. You can arm several tracks, but the keyboard only plays the selected one. Recording ignores cycle: it carries on past the cycle's end. A recording you didn't like is gone with one <kbd>Ctrl</kbd>+<kbd>Z</kbd>.</div>
+
+<div class="box warn"><b class="label">WARNING</b>Recording sound from a microphone isn't available in this version. Don't arm an audio track: you'd get an empty recording. To use a recording you've made elsewhere, see <a href="#ch16">Chapter 16</a>.</div>
+
+<!-- ======================================================================= -->
+<h2 class="part" id="part3">Part III: Sounds and the Mix<small>Getting the balance right and choosing instruments</small></h2>
+
+<h3 class="chapter" id="ch11"><span>11</span> Tracks and the mix</h3>
+
+<figure><img src="images/track-headers.png" alt="Track headers"><figcaption>Track headers: name, M S R buttons, and the volume and pan sliders. The coloured edge shows what kind of sound the track plays.</figcaption></figure>
+
+<table>
+<tr><th>Control</th><th>What it does</th></tr>
+<tr><td>Name</td><td>Click it to select the track: the keyboard plays it and recording goes onto it. Drag it up or down to move the track. Drum tracks also show their kit on the right.</td></tr>
+<tr><td><b>M</b> (mute)</td><td>Silences the track. Click again to hear it.</td></tr>
+<tr><td><b>S</b> (solo)</td><td>Plays only the soloed tracks. You can solo several.</td></tr>
+<tr><td><b>R</b> (record)</td><td>Arms the track for recording (<a href="#ch10">Chapter 10</a>).</td></tr>
+<tr><td>Top slider</td><td>Volume. Drag it.</td></tr>
+<tr><td>Bottom slider</td><td>Pan: left to right in the stereo picture. The middle is "sticky", so it's easy to put back in the centre.</td></tr>
+<tr><td>The thin coloured line along the bottom of the header</td><td>The level meter: how loud the track is as it plays.</td></tr>
+</table>
+
+<h4>Adding and deleting tracks</h4>
+<p>Click <b>Drums</b>, <b>Keys</b> or <b>Audio</b> under the tracks, or use the main menu's <b>Track</b> submenu (New drummer track, New instrument track, New audio track). To delete the selected track, choose <b>Track &rarr; Delete track</b>.</p>
+
+<div class="box warn"><b class="label">WARNING</b><b>Delete track</b> deletes its regions too, straight away. If you didn't mean to, press <kbd>Ctrl</kbd>+<kbd>Z</kbd> at once.</div>
+
+<h4>Renaming and moving tracks</h4>
+<p>To rename the selected track, choose <b>Track &rarr; Rename</b> from the main menu and move to the arrow: the track's name appears in a box. <kbd>Ctrl</kbd>+<kbd>U</kbd> clears it; type the new name and press <kbd>Return</kbd>. A track you've named keeps its name when you change its sound.</p>
+<figure><img src="images/rename.png" alt="Renaming a track"><figcaption>Track &rarr; Rename, with the new name typed in.</figcaption></figure>
+<p>To change the order of the tracks, drag a track's name up or down: the track moves as you drag.</p>
+
+<h4>The master volume</h4>
+<p>The <b>Vol</b> slider on the toolbar sets how loud the whole song is. Turn it down if the song sounds harsh when everything plays at once; it affects exported WAVs too, and is saved with the song.</p>
+
+<div class="box tip"><b class="label">TIP</b>Every track sends a little to a reverb, which makes the mix sound like it's in a room. Drum tracks get less than the others. Groove also gently limits the loudest moments, so a song with many tracks doesn't crackle.</div>
+
+<h3 class="chapter" id="ch12"><span>12</span> Choosing sounds, including SoundFont sounds</h3>
+
+<p>Each drum or instrument track has a <b>sound</b>. To change it, select the track and choose <b>Track &rarr; Sound</b> from the main menu, or click the coloured sound button in the Editor's header.</p>
+
+<h4>Groove's own sounds</h4>
+<p>For instrument tracks: Electric Piano, Synth Bass, Warm Pad, Square Lead, Plucked Guitar, Drawbar Organ and Glass Bells. For drum tracks: Studio Kit and Electro Kit. When you choose an instrument, the track is renamed after it; a drum track keeps its name and shows the kit on the right of its header. Audio tracks have no sound to choose, so <b>Sound</b> is greyed out for them.</p>
+
+<h4>SoundFont sounds</h4>
+<p>If <b>!SoftMIDI</b> is installed, the Sound menu also has a <b>SoundFont</b> item (<b>SoundFont kits</b> on drum tracks). Its submenu has the 16 General MIDI families (Piano, Chromatic percussion, Organ, Guitar, Bass, Strings, Ensemble, Brass, Reed, Pipe, Synth lead, Synth pad, Synth effects, World, Percussive and Sound effects), each with eight instruments: 128 in all. Drum tracks get 8 kits: Standard, Room, Power, Electronic, 808, Jazz, Brush and Orchestra.</p>
+<figure><img src="images/soundfont-menu.png" alt="The SoundFont menu"><figcaption>Track &rarr; Sound &rarr; SoundFont &rarr; Piano.</figcaption></figure>
+<p>The first time you choose a SoundFont sound, Groove loads !SoftMIDI's SoundFont, which takes a few seconds (the hourglass shows). After that, SoundFont sounds work like Groove's own: in the mix, in recordings and in exported WAVs.</p>
+
+<div class="box rem"><b class="label">REMEMBER</b>If the item says <b>SoundFont (needs !SoftMIDI)</b> and is greyed out, Groove can't find a SoundFont. Install !SoftMIDI and open the directory it's in, so the Filer sees it, then try again. You don't need to restart Groove.</div>
+
+<div class="box tip"><b class="label">TIP</b>A song that uses SoundFont sounds still plays on a computer without !SoftMIDI: Groove tells you it couldn't load a SoundFont, and plays its own sounds on those tracks instead.</div>
+
+<div class="box tech"><b class="label">TECHNICAL STUFF</b>The SoundFont is played by SoftMIDI's library inside Groove. Each instrument track has a MIDI channel of its own. All drum tracks share MIDI channel 10, the only one that plays kits, so if two drum tracks use SoundFont kits, they use the first one's kit and pan. That leaves 15 channels for instruments: a song of 16 instrument tracks with SoundFont sounds needs a second SoundFont player for the last one, which Groove loads when it's first needed (it takes the SoundFont's size in memory again; until then that track plays Groove's own nearest sound). Up to 48 SoundFont notes can sound at once.</div>
+
+<!-- ======================================================================= -->
+<h2 class="part" id="part4">Part IV: Files<small>Saving, exporting and bringing music in</small></h2>
+
+<h3 class="chapter" id="ch13"><span>13</span> Saving and opening songs</h3>
+
+<h4>Saving</h4>
+<ol class="steps">
+<li>Press <kbd>Ctrl</kbd>+<kbd>S</kbd>, or choose <b>Song &rarr; Save</b> from the main menu. The save box opens.</li>
+<li>Type a name (<kbd>Ctrl</kbd>+<kbd>U</kbd> clears the box first), then drag the file icon to a Filer window. Or type a full pathname (for example <code>SDFS::ePic.$.Music.MySong</code>) and press <kbd>Return</kbd> or click <b>Save</b>.</li>
+</ol>
+<figure><img src="images/save-box.png" alt="The save box"><figcaption>The save box.</figcaption></figure>
+<p>The song window's title shows the song's full name, with a <b>*</b> after it when there are changes you haven't saved.</p>
+
+<h4>Opening a song</h4>
+<p>Drag a saved song onto Groove's song window or its icon bar icon. If Groove is running, you can also double-click the song in the Filer. Either way, if your current song has unsaved changes, Groove asks first.</p>
+
+<h4>Starting a new song</h4>
+<p>Choose <b>Song &rarr; New</b> from the main menu, or <b>New song</b> from the icon bar menu. You get a new song with a Drums and an Electric Piano track.</p>
+
+<div class="box tech"><b class="label">TECHNICAL STUFF</b>A song is a short text file (file type Text for now, until Groove has a file type of its own), so you can read it in an editor. If the song uses WAV recordings, they're saved next to it as <code>Song_A0</code>, <code>Song_A1</code> and so on: keep them with the song.</div>
+
+<h3 class="chapter" id="ch14"><span>14</span> Exporting a WAV file</h3>
+<p>To make a file anyone can play, choose <b>Song &rarr; Export as WAV</b>, then save it as you would a song. Groove plays the whole song through, from the start to the end of the last region plus two seconds for the echoes to die away, and writes a 16-bit stereo WAV at 44.1&nbsp;kHz. Cycle is ignored; muted tracks stay silent.</p>
+<p>If you've saved the song, the name in the save box starts as the song's full name with <code>_mix</code> on the end (otherwise just <code>Mix</code>), so the WAV goes next to the song unless you drag it somewhere else.</p>
+
+<h3 class="chapter" id="ch15"><span>15</span> MIDI files and Maestro music</h3>
+
+<h4>Importing a MIDI file</h4>
+<p>Drag a MIDI file (file type &amp;FD4) onto the song window, at the bar where you want it to start, or onto Groove's icon bar icon to start at bar 1. Groove makes a new track for each part, named after its instrument, and cuts the music into 4-bar regions you can edit. The drum part becomes a drum track, with each drum put on the nearest of the step grid's eight rows.</p>
+<figure><img src="images/midi-imported.png" alt="A MIDI file imported"><figcaption>A MIDI file dropped on a new song: its four parts become the song's tracks, with SoundFont sounds, in place of the empty starter tracks.</figcaption></figure>
+<p>Imported tracks use SoundFont sounds, so they sound like the original if you have !SoftMIDI (<a href="#ch12">Chapter 12</a>). If the song was empty, it also takes the MIDI file's tempo and time signatures.</p>
+
+<div class="box rem"><b class="label">REMEMBER</b>A song can hold 16 tracks, as many as a MIDI file has parts. Dropped on a song with no music in it yet, the file's parts take the place of its empty tracks (a new song's Drums and Electric Piano), so a 16-part file fits; <kbd>Ctrl</kbd>+<kbd>Z</kbd> brings them back. If there isn't room for every part, Groove imports what fits and tells you. A very long file may fill the song too; Groove says which bar it got to.</div>
+
+<h4>Exporting a MIDI file</h4>
+<p>Choose <b>Song &rarr; Export as MIDI</b> and save it as you would a song (the name starts as the song's name with <code>_midi</code> on the end, or <code>MIDI</code>). You get a standard MIDI file with a part for each drum and instrument track, which other music programs can open. Groove's own sounds are given the nearest General MIDI instrument, and the song's time signatures go in too.</p>
+
+<h4>Maestro music</h4>
+<p>Maestro is the music-writing program that comes with RISC OS, and Groove plays its files (file type &amp;AF1, the ones with the music icon). RISC OS 5 has some in <code>Documents.Music.Maestro</code> to try. Drag one onto the song window, at the bar where you want it to start, or onto Groove's icon bar icon to start at bar 1.</p>
+<figure><img src="images/maestro-score.png" alt="Gigue in Maestro"><figcaption>Gigue, one of the pieces that come with RISC OS, in Maestro...</figcaption></figure>
+<figure><img src="images/maestro-imported.png" alt="Gigue in Groove"><figcaption>...and dropped on a new song in Groove: a track for each of Maestro's channels with notes, in 6/8 (in orange on the ruler), at Maestro's tempo and in E.</figcaption></figure>
+<p>Groove makes a track for each of Maestro's channels that has notes, named after the voice Maestro plays it with (StringLib-Soft, for example) and the channel number. It plays the music the way Maestro does:</p>
+<ul>
+<li><b>The notes:</b> each note's pitch comes from its line on the stave and the clef. Sharps and flats from the key signature apply, and so does an accidental, for the rest of that bar on that line, just as in printed music.</li>
+<li><b>The timing:</b> note lengths, dots and rests. Tied notes are played as one long note.</li>
+<li><b>The song:</b> if the song was empty, Groove also takes Maestro's tempo, its key and its time signatures, including any changes part-way through.</li>
+<li><b>Each channel's setting:</b> Maestro's volume and stereo position for each channel become the track's volume and pan.</li>
+<li><b>Sounds:</b> each voice gets the nearest SoundFont instrument; the StringLib voices become guitars, harp and harpsichord, and WaveSynth-Beep becomes a square-wave lead. Percussion voices make drum tracks. Without !SoftMIDI, Groove's own nearest sounds play instead. You can choose any other sound with <b>Track &rarr; Sound</b>.</li>
+</ul>
+<div class="box tech"><b class="label">TECHNICAL STUFF</b>Maestro files say which voice each channel uses by number, and the numbers depend on which voices the computer has. Groove asks RISC OS for the computer's voices, as Maestro does, so the tracks get the same voices Maestro would use there. Maestro has room in its files for slurs and octave-shift marks, but doesn't play them, so Groove doesn't either. Groove's count of the timing was checked against Maestro playing the same pieces: the notes land within a few hundredths of a second over two minutes.</div>
+
+<h3 class="chapter" id="ch16"><span>16</span> Using your own recordings</h3>
+<p>Drag a WAV file onto a track in the song window. If you drop it on an audio track, it goes there at the bar you dropped it on; anywhere else, Groove makes a new audio track for it. Groove reads 8, 16 and 24-bit WAV files, mono or stereo.</p>
+<p>Audio regions can be moved like any other, and made shorter, but not longer than the recording. They have no notes, so the Editor has nothing to show for them.</p>
+
+<!-- ======================================================================= -->
+<h2 class="part" id="part5">Part V: The Part of Tens<small>Quick answers</small></h2>
+
+<h3 class="chapter" id="ch17"><span>17</span> Ten keys to learn first</h3>
+<table>
+<tr><th>Key</th><th>Does</th></tr>
+<tr><td><kbd>Space</kbd></td><td>Play / stop</td></tr>
+<tr><td><kbd>R</kbd></td><td>Record / stop recording</td></tr>
+<tr><td><kbd>Return</kbd></td><td>Back to the start</td></tr>
+<tr><td><kbd>&larr;</kbd> <kbd>&rarr;</kbd></td><td>A bar back / on</td></tr>
+<tr><td><kbd>A</kbd> to <kbd>;</kbd>, <kbd>W</kbd> to <kbd>P</kbd></td><td>Play notes</td></tr>
+<tr><td><kbd>Z</kbd> <kbd>X</kbd></td><td>Octave down / up</td></tr>
+<tr><td><kbd>Delete</kbd></td><td>Delete the selected region</td></tr>
+<tr><td><kbd>F7</kbd> <kbd>F8</kbd> <kbd>F9</kbd></td><td>Loops, Editor, Keyboard</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>S</kbd></td><td>Save</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>Z</kbd></td><td>Undo (<kbd>Ctrl</kbd>+<kbd>Y</kbd> redoes)</td></tr>
+</table>
+
+<h3 class="chapter" id="ch18"><span>18</span> Ten problems and what to do about them</h3>
+<table>
+<tr><th>Problem</th><th>What to do</th></tr>
+<tr><td>Double-clicking !Groove seems to do nothing.</td><td>Look for Groove's windows and icon bar icon; if they're there, it started. If not, see the last row of this table.</td></tr>
+<tr><td>No sound.</td><td>Check the track isn't muted, that another track isn't soloed, and the volume slider isn't at the left. Check RISC OS's own sound volume.</td></tr>
+<tr><td>Keys don't play notes.</td><td>Click in the song window so Groove has the input focus, and check the selected track is a drum or instrument track.</td></tr>
+<tr><td>A loop won't go on the track I want.</td><td>Drum loops go on drum tracks; the others on instrument tracks. Dropping on the wrong kind makes a new track. If the song already has 16 tracks, Groove says "There's no room for another track or region in this song."</td></tr>
+<tr><td>A region won't move to another track.</td><td>Regions only move between tracks of the same kind.</td></tr>
+<tr><td>The SoundFont item is greyed out.</td><td>Install !SoftMIDI and open its directory so the Filer sees it (<a href="#ch12">Chapter 12</a>).</td></tr>
+<tr><td>A red <b>!</b> in the display.</td><td>The sound ran dry for a moment because the computer was busy. Close other busy programs; fewer SoundFont notes at once also helps.</td></tr>
+<tr><td>Recording left nothing.</td><td>Make sure the right track was selected, and that you played while the display showed REC. An empty recording leaves no region. With <b>Merge recordings</b> ticked, notes played over a region went into it.</td></tr>
+<tr><td>Double-clicking a saved song opens it in a text editor.</td><td>Songs are Text files for now. Start Groove first, or drag the song onto Groove.</td></tr>
+<tr><td>Something else went wrong.</td><td>Groove writes a log of how it started to <code>&lt;Wimp$ScrapDir&gt;.GrooveLog</code>. Type <code>*Type &lt;Wimp$ScrapDir&gt;.GrooveLog</code> and send what it says with your report.</td></tr>
+</table>
+
+<h3 class="chapter" id="ch19"><span>19</span> Ten things for experienced users</h3>
+<ol>
+<li><b>Time:</b> 96 ticks per crotchet. Time signatures are a list of changes at bars (<code>meter</code> lines in the song file: bar from 0, beats, beat note), so bars can be any length. The step grid's steps are sixteenths (24 ticks).</li>
+<li><b>Limits:</b> 16 tracks, 256 regions, 256 patterns, 384 notes per pattern, 16 audio clips. Undo keeps 100 steps, as compact snapshots of the song taken after each change (recordings' sound isn't copied, so a recording only comes back while its memory hasn't been reused).</li>
+<li><b>Regions loop their pattern:</b> a region longer than its pattern repeats it. Duplicates share a pattern until one is edited (copy on edit).</li>
+<li><b>Song files</b> are text: a <code>GROOVE 1</code> line, then <code>tempo</code>, <code>key</code>, <code>bars</code>, <code>loop</code>, <code>metronome</code> and <code>master</code>, then <code>track</code> lines, <code>pattern</code> blocks (<code>n</code> note lines, ending with <code>end</code>), <code>region</code> and <code>clip</code> lines. The last number on a track line is its SoundFont sound (&minus;1 for Groove's own).</li>
+<li><b>Sound path:</b> Groove renders on null events into a buffer in the RMA, about 70&nbsp;ms ahead, and a small SharedSound handler copies it out; the playhead is drawn where you hear it, not where the engine is.</li>
+<li><b>No CPU when idle:</b> null events are switched off whenever nothing is playing or held.</li>
+<li><b>Recording quantise</b> snaps note starts to the nearest sixteenth when you stop; merging then moves notes into any region they fall in (copying a shared pattern first).</li>
+<li><b>SoundFont mapping:</b> instrument tracks take MIDI channels in order, skipping 10, which all drum tracks share; a 16th instrument track goes to a second synth. Volume and pan are sent as controllers 7 and 10.</li>
+<li><b>MIDI export</b> is type 1 at 96 PPQ, with a tempo track and one track per Groove track; Groove's own sounds map to programs 4, 38, 89, 80, 24, 16 and 14.</li>
+<li><b>Start-up log:</b> <code>&lt;Wimp$ScrapDir&gt;.GrooveLog</code> records each start-up step, the first events and whether the sound handler is being called; a crash is caught, logged and reported in an error box.</li>
+</ol>
+
+<!-- ======================================================================= -->
+<h2 class="part" id="appA">Appendix: keys, mouse and menus</h2>
+
+<h4>Keys (in any Groove window)</h4>
+<table>
+<tr><th>Key</th><th>Does</th></tr>
+<tr><td><kbd>Space</kbd></td><td>Play / stop</td></tr>
+<tr><td><kbd>R</kbd></td><td>Record / stop recording</td></tr>
+<tr><td><kbd>Return</kbd></td><td>Back to the start</td></tr>
+<tr><td><kbd>&larr;</kbd> / <kbd>&rarr;</kbd></td><td>A bar back / on</td></tr>
+<tr><td><kbd>Delete</kbd> or <kbd>Backspace</kbd></td><td>Delete the selected region</td></tr>
+<tr><td><kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> <kbd>F</kbd> <kbd>G</kbd> <kbd>H</kbd> <kbd>J</kbd> <kbd>K</kbd> <kbd>L</kbd> <kbd>;</kbd></td><td>White notes from C (drum tracks: the eight drums on <kbd>A</kbd> to <kbd>K</kbd>)</td></tr>
+<tr><td><kbd>W</kbd> <kbd>E</kbd> <kbd>T</kbd> <kbd>Y</kbd> <kbd>U</kbd> <kbd>O</kbd> <kbd>P</kbd></td><td>Black notes</td></tr>
+<tr><td><kbd>Z</kbd> / <kbd>X</kbd></td><td>Octave down / up</td></tr>
+<tr><td><kbd>C</kbd> / <kbd>V</kbd></td><td>Velocity down / up</td></tr>
+<tr><td><kbd>F7</kbd> / <kbd>F8</kbd> / <kbd>F9</kbd></td><td>Loops / Editor / Keyboard window</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>S</kbd></td><td>Save</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Ctrl</kbd>+<kbd>Y</kbd></td><td>Undo / Redo</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>C</kbd> / <kbd>Ctrl</kbd>+<kbd>V</kbd></td><td>Copy the selected region / paste it at the playhead</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>T</kbd></td><td>Split the selected region at the playhead</td></tr>
+</table>
+
+<h4>Keys in the piano roll (with notes selected)</h4>
+<table>
+<tr><th>Key</th><th>Does</th></tr>
+<tr><td><kbd>&uarr;</kbd> / <kbd>&darr;</kbd></td><td>Up / down a semitone (with <kbd>Shift</kbd>, an octave)</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>&uarr;</kbd> / <kbd>Ctrl</kbd>+<kbd>&darr;</kbd></td><td>Louder / softer</td></tr>
+<tr><td><kbd>Delete</kbd></td><td>Delete the selected notes</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>C</kbd> / <kbd>Ctrl</kbd>+<kbd>V</kbd></td><td>Copy the notes / paste them at the playhead</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>A</kbd> / <kbd>Escape</kbd></td><td>Select all / none</td></tr>
+</table>
+
+<h4>Mouse</h4>
+<table>
+<tr><th>Where</th><th>Select</th><th>Adjust</th></tr>
+<tr><td>Icon bar icon</td><td>Open the song window</td><td>Open the Loops window</td></tr>
+<tr><td>Ruler</td><td>Move the playhead (click or drag)</td><td>Drag to set the cycle bars</td></tr>
+<tr><td>Region</td><td>Select; drag to move; double-click to edit</td><td>Select without moving</td></tr>
+<tr><td>Region's right-hand end</td><td>Drag to lengthen or shorten</td><td>Drag to lengthen or shorten</td></tr>
+<tr><td>Empty part of a track</td><td>Double-click: a new one-bar region</td><td>&ndash;</td></tr>
+<tr><td>Loop name</td><td>Click: listen; drag: put in the song</td><td>&ndash;</td></tr>
+<tr><td>Step grid square</td><td>Hit on/off; drag to paint</td><td>Accented hit; accent on/off</td></tr>
+<tr><td>Piano roll</td><td>Draw a note (drag to lengthen); drag a note to move it, or the selection it's in. <kbd>Shift</kbd>+click: add to or take from the selection; <kbd>Shift</kbd>+drag: select with a box</td><td>Delete a note</td></tr>
+<tr><td>Track name</td><td>Select the track; drag to move it up or down</td><td>&ndash;</td></tr>
+<tr><td>Vol slider</td><td>Drag: the master volume</td><td>&ndash;</td></tr>
+<tr><td>Tempo &minus; / +</td><td>By 1</td><td>By 10</td></tr>
+<tr><td>Tempo number</td><td>+5</td><td>&minus;5</td></tr>
+<tr><td>Key button</td><td>Up a semitone</td><td>Down a semitone</td></tr>
+<tr><td>Mouse wheel</td><td colspan="2">Scroll the tracks; with <kbd>Shift</kbd>, move along the song</td></tr>
+<tr><td>Scroll bar along the bottom</td><td colspan="2">Move along the song</td></tr>
+</table>
+
+<h4>Menus</h4>
+<p>Click <b>Menu</b> anywhere in the song window, the Editor, the Loops window or the Keyboard window for the main menu. As everywhere on RISC OS, choosing with Adjust keeps the menu open.</p>
+<figure><img src="images/main-menu.png" alt="The main menu with the Track submenu"><figcaption>The main menu with its Track submenu.</figcaption></figure>
+<table>
+<tr><th>Menu</th><th>Items</th></tr>
+<tr><td>Song</td><td>New; Save...; Export as WAV...; Export as MIDI...; Key &rarr; (the 12 keys); Time signature &rarr; (2/4 to 12/8, from the playhead's bar); Import WAV, MIDI, Maestro: drag in (a reminder)</td></tr>
+<tr><td>Track</td><td>New drummer track; New instrument track; New audio track; Sound &rarr;; Rename &rarr;; Delete track</td></tr>
+<tr><td>Region</td><td>Edit; Duplicate; Delete; Split at playhead (<kbd>Ctrl</kbd>+<kbd>T</kbd>); Copy (<kbd>Ctrl</kbd>+<kbd>C</kbd>); Paste (<kbd>Ctrl</kbd>+<kbd>V</kbd>)</td></tr>
+<tr><td>Loop browser, Editor, Musical typing</td><td>Open those windows (<kbd>F7</kbd>, <kbd>F8</kbd>, <kbd>F9</kbd>)</td></tr>
+<tr><td>Cycle, Metronome, Count-in, Merge recordings, Follow playhead</td><td>Turn each on or off (ticked when on). Count-in and Follow playhead start on.</td></tr>
+<tr><td>Undo, Redo</td><td>Take back the last change, or put it back (<kbd>Ctrl</kbd>+<kbd>Z</kbd>, <kbd>Ctrl</kbd>+<kbd>Y</kbd>)</td></tr>
+</table>
+<p>The icon bar menu: Info &rarr; (the Info box); Help...; User guide; Song window; Loop browser; New song; Quit.</p>
+
+<p class="small">Groove is free software under the MIT licence; the licences of the code it includes are in <code>!Groove.Licences</code>. Groove's SoundFont sounds use SoftMIDI's library and TinySoundFont (MIT licence). The SoundFont itself comes with !SoftMIDI.</p>
+
+</main>
+</body>
+</html>

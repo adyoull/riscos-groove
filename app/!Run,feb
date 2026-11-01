@@ -1,0 +1,13 @@
+| !Run for !Groove
+| !RunImage is a UnixLib program converted to Absolute (AIF), so it needs
+| SharedUnixLibrary and ARMEABISupport (both from PackMan). SharedSound is
+| part of RISC OS 5.
+Set Groove$Dir <Obey$Dir>
+IconSprites <Groove$Dir>.!Sprites
+RMEnsure SharedUnixLibrary 1.16 IfThere System:Modules.SharedULib Then RMLoad System:Modules.SharedULib
+RMEnsure SharedUnixLibrary 1.16 Error Groove needs SharedUnixLibrary 1.16 or later. Install it with PackMan.
+RMEnsure ARMEABISupport 0 IfThere System:Modules.ARMEABISupport Then RMLoad System:Modules.ARMEABISupport
+RMEnsure ARMEABISupport 0 Error Groove needs the ARMEABISupport module. Install it with PackMan.
+RMEnsure SharedSound 0 Error Groove needs the SharedSound module, which comes with RISC OS 5.
+WimpSlot -min 3072K -max 3072K
+Run <Groove$Dir>.!RunImage
