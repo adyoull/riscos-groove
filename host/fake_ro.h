@@ -26,6 +26,17 @@ typedef struct
   char started[256];             /* the last Wimp_StartTask command */
   int starts;
   int shift;                     /* Shift held (OS_Byte 121) */
+  int midi_present;              /* a MIDI module (MIDI_RxCommand) */
+  int midi_q[64], midi_n, midi_i; /* messages waiting, as MIDI_RxCommand packs them */
+  int midi_port_asked;           /* the port the last MIDI_RxCommand asked for */
+  int ms_present;                /* MIDI Support (MIDISupport_CreateDriver etc.) */
+  int ms_handle, ms_flags, ms_removed; /* the driver Groove made; RemoveDriver's handle */
+  char ms_name[32], ms_date[32];
+  int ms_version;
+  unsigned ms_sent[256]; int ms_nsent;   /* MIDISupport_Send: what Groove sent */
+  unsigned midi_tx[256]; int midi_ntx;   /* MIDI_TxCommand */
+  unsigned ms_sent_at[256];              /* frames heard when each was sent */
+  int ms_q[64], ms_n, ms_i;      /* commands routed to Groove's driver */
   int errors, error_answer;
   int msg[64], msg_reason, msg_to, messages, my_ref;
   int redraws, force_redraws, plots, texts, nulls_while_masked;

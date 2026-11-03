@@ -219,7 +219,8 @@ static void menu_end (menu_builder *b)
 enum { MENU_NONE, MENU_ICONBAR, MENU_MAIN, MENU_SOUND };
 static int open_menu = MENU_NONE, menu_x, menu_y;
 static int m_iconbar[MENU_WORDS (7)];
-static int m_main[MENU_WORDS (13)], m_song[MENU_WORDS (7)], m_key[MENU_WORDS (12)];
+static int m_midi[MENU_WORDS (7)], m_midiout[MENU_WORDS (6)];
+static int m_main[MENU_WORDS (15)], m_song[MENU_WORDS (7)], m_key[MENU_WORDS (12)];
 /* Song > Time signature: from the bar the playhead is in. */
 static const int meters[][2] = { { 2, 4 }, { 3, 4 }, { 4, 4 }, { 5, 4 }, { 6, 8 }, { 7, 8 }, { 9, 8 }, { 12, 8 } };
 #define NMETERS ((int) (sizeof meters / sizeof meters[0]))
@@ -227,7 +228,7 @@ static int m_meter[MENU_WORDS (NMETERS)];
 static char meter_text[NMETERS][8];
 static int m_rename[MENU_WORDS (1)];
 static char rename_buf[GR_NAME];
-static int m_track[MENU_WORDS (6)], m_sound[MENU_WORDS (PATCH_COUNT + 1)], m_region[MENU_WORDS (6)];
+static int m_track[MENU_WORDS (7)], m_sound[MENU_WORDS (PATCH_COUNT + 1)], m_region[MENU_WORDS (6)];
 static int m_gm[MENU_WORDS (16)], m_gm_prog[16][MENU_WORDS (8)], m_gm_kits[MENU_WORDS (GM_NKITS)];
 static const char *const key_names[12] =
   { "C", "C#/Db", "D", "D#/Eb", "E", "F", "F#/Gb", "G", "G#/Ab", "A", "A#/Bb", "B" };
@@ -403,7 +404,9 @@ static void build_main_menu (void)
   menu_add (&b, "New audio track", MI_DOTTED, NULL, app.song.ntracks >= GR_MAX_TRACKS);
   menu_add (&b, "Sound", 0, m_sound, !has_t || app.song.tracks[t].type == TRK_AUDIO);
   menu_add (&b, "Rename", MI_DOTTED, m_rename, !has_t);
-  menu_add (&b, "Delete track", 0, NULL, !has_t);
+  menu_add (&b, "Delete track", MI_DOTTED, NULL, !has_t);
+  menu_add (&b, "Play on MIDI out", has_t && app.song.tracks[t].midi_out ? MI_TICK : 0, NULL,
+            !has_t || app.song.tracks[t].type == TRK_AUDIO);
   menu_end (&b);
 
   menu_begin (&b, m_region, "Region");
@@ -415,13 +418,41 @@ static void build_main_menu (void)
   menu_add (&b, "Paste              ^V", 0, NULL, !arrange_can_paste ());
   menu_end (&b);
 
+  /* MIDI keyboard: MIDI Support (Groove's own driver there), or a MIDI
+     module's ports. */
+  {
+    static const char *const names[7] = { "Off", "MIDI Support", "Any port", "Port 1", "Port 2", "Port 3", "Port 4" };
+    static const int ports[7] = { MIDI_OFF, MIDI_SUPPORT, MIDI_ANY, 0, 1, 2, 3 };
+    int p, ok, ms;
+    midiin_forget_module ();      /* (they may have been loaded since we looked) */
+    p = midiin_port ();
+    ok = midiin_present ();
+    ms = midiin_support ();
+    menu_begin (&b, m_midi, "MIDI in");
+    for (i = 0; i < 7; i++)
+      menu_add (&b, names[i], (p == ports[i] ? MI_TICK : 0) | (i == 0 || i == 1 ? MI_DOTTED : 0), NULL,
+                i == 1 ? !ms : i > 1 && !ok);
+    menu_end (&b);
+    /* MIDI out: where tracks with "Play on MIDI out" are sent. */
+    p = midiout_port ();
+    menu_begin (&b, m_midiout, "MIDI out");
+    menu_add (&b, "Off", (p == MIDI_OFF ? MI_TICK : 0) | MI_DOTTED, NULL, 0);
+    menu_add (&b, "MIDI Support", (p == MIDI_SUPPORT ? MI_TICK : 0) | MI_DOTTED, NULL, !ms);
+    for (i = 0; i < 4; i++)
+      menu_add (&b, names[3 + i], p == i ? MI_TICK : 0, NULL, !ok);
+    menu_end (&b);
+  }
+
   menu_begin (&b, m_main, APP_NAME);
   menu_add (&b, "Song", 0, m_song, 0);
   menu_add (&b, "Track", 0, m_track, 0);
   menu_add (&b, "Region", MI_DOTTED, m_region, 0);
   menu_add (&b, "Loop browser    F7", 0, NULL, 0);
   menu_add (&b, "Editor          F8", 0, NULL, 0);
-  menu_add (&b, "Musical typing  F9", MI_DOTTED, NULL, 0);
+  menu_add (&b, "Musical typing  F9", 0, NULL, 0);
+  menu_add (&b, midiin_present () || midiin_support () ? "MIDI keyboard" : "MIDI keyboard (needs MIDI)",
+            0, m_midi, 0);
+  menu_add (&b, "MIDI out", MI_DOTTED, m_midiout, 0);
   menu_add (&b, "Cycle", app.song.loop_on ? MI_TICK : 0, NULL, 0);
   menu_add (&b, "Metronome", app.song.metronome ? MI_TICK : 0, NULL, 0);
   menu_add (&b, "Count-in", app.count_in ? MI_TICK : 0, NULL, 0);
@@ -623,6 +654,12 @@ static void menu_selection (int *sel)
             editor_show (-1);
             app_changed ();
           }
+        else if (sel[1] == 6 && t >= 0 && t < app.song.ntracks && app.song.tracks[t].type != TRK_AUDIO)
+          {
+            midiout_reset ();     /* (notes off, and the channels set up again) */
+            app.song.tracks[t].midi_out = !app.song.tracks[t].midi_out;
+            app_changed ();
+          }
         break;
       case 2:                     /* Region */
         if (app.sel_region >= 0 && app.song.regions[app.sel_region].used)
@@ -663,13 +700,27 @@ static void menu_selection (int *sel)
       case 3: browser_open (); break;
       case 4: editor_open (); break;
       case 5: keys_open (); break;
-      case 6: app.song.loop_on = !app.song.loop_on; app_changed (); break;
-      case 7: app.song.metronome = !app.song.metronome; app_redraw_all (app.w_tool); break;
-      case 8: app.count_in = !app.count_in; break;
-      case 9: app.merge = !app.merge; break;
-      case 10: app.follow = !app.follow; break;
-      case 11: app_undo (0); break;
-      case 12: app_undo (1); break;
+      case 6:
+        {
+          static const int ports[7] = { MIDI_OFF, MIDI_SUPPORT, MIDI_ANY, 0, 1, 2, 3 };
+          if (sel[1] == 0 || (sel[1] == 1 && midiin_support ()) || (sel[1] > 1 && sel[1] < 7 && midiin_present ()))
+            midiin_set_port (ports[sel[1]]);
+        }
+        break;
+      case 7:
+        {
+          static const int ports[6] = { MIDI_OFF, MIDI_SUPPORT, 0, 1, 2, 3 };
+          if (sel[1] == 0 || (sel[1] == 1 && midiin_support ()) || (sel[1] > 1 && sel[1] < 6 && midiin_present ()))
+            midiout_set_port (ports[sel[1]]);
+        }
+        break;
+      case 8: app.song.loop_on = !app.song.loop_on; app_changed (); break;
+      case 9: app.song.metronome = !app.song.metronome; app_redraw_all (app.w_tool); break;
+      case 10: app.count_in = !app.count_in; break;
+      case 11: app.merge = !app.merge; break;
+      case 12: app.follow = !app.follow; break;
+      case 13: app_undo (0); break;
+      case 14: app_undo (1); break;
       }
   /* Adjust keeps the menu open, as everywhere on RISC OS. */
   app_pointer (NULL, NULL, &buttons, NULL, NULL);
@@ -1014,6 +1065,11 @@ static int init (void)
       startlog ("FAILED: sound_init");
       return 1;
     }
+  startlog_stage ("MIDI");
+  midiin_forget_module ();      /* (registers with MIDI Support, if it's there) */
+  atexit (midiin_quit);
+  startlog ("MIDI Support %s, MIDI module %s", midiin_support () ? "registered" : "not there",
+            midiin_present () ? "there" : "not there");
   startlog_stage ("opening a new song");
   arrange_new_song ();
   /* Straight into the studio: the song window and the
@@ -1037,12 +1093,16 @@ int main (void)
   while (!quit)
     {
       _kernel_oserror *e;
-      int busy = gr_busy (app.eng) || app.drag || keys_held ();
+      int midi = midiin_active ();
+      int busy;
+      midi |= midiout_pending ();
+      busy = gr_busy (app.eng) || app.drag || keys_held () || midi;
       if (busy)
         {
           int now;
           _swix (OS_ReadMonotonicTime, _OUT (0), &now);
-          e = _swix (Wimp_PollIdle, _INR (0, 2) | _OUT (0), 0, b, now + 2, &reason);
+          /* (every centisecond while a MIDI keyboard may be played) */
+          e = _swix (Wimp_PollIdle, _INR (0, 2) | _OUT (0), 0, b, now + (midi ? 1 : 2), &reason);
         }
       else
         e = _swix (Wimp_Poll, _INR (0, 1) | _OUT (0), 1, b, &reason);
@@ -1066,7 +1126,9 @@ int main (void)
         if (logged < 12)
           startlog ("event %d, sound played to %u, queued %d", reason, sound_played (), sound_latency ()), logged++;
       }
+      midiin_poll ();           /* notes from a MIDI keyboard, first */
       sound_fill (app.eng);     /* on every return from the Wimp */
+      midiout_poll ();          /* MIDI out whose sound is now being heard */
       note_change (reason);
       switch (reason)
         {
@@ -1090,8 +1152,10 @@ int main (void)
           break;
         }
       sound_fill (app.eng);     /* events can be slow: top up again */
+      midiout_poll ();
     }
   gr_stop (app.eng);
+  midiin_quit ();               /* "Groove" leaves MIDI Support's map */
   sound_close ();
   _swix (Wimp_CloseDown, _INR (0, 1), app.task, TASK_WORD);
   return 0;

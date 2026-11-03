@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.2.2 (2 Nov 2026)
+
+- MIDI keyboard: a MIDI keyboard plays the selected track like musical
+  typing, with its velocity; recording, count-in and merging work the same
+  way. Drum keys play a drum track's drums; the sustain pedal holds notes.
+  A MIDI light in the toolbar's display. Two ways in:
+  - MIDI Support: with Pete Everett's MIDI Support (!MidiSupp) loaded,
+    Groove registers as a driver called "Groove", listed in the MIDI
+    Manager and *MIDIMap. Anything connected to it (a USB or serial MIDI
+    port, MIDIKeyboard, another program) plays Groove, whichever window has
+    the input focus. Groove leaves MIDI Support when it quits.
+  - A MIDI module's ports (Rick Murray and Dave Hinton's USBMIDI, for USB
+    MIDI keyboards and interfaces), read only while Groove has the input
+    focus, so other music programs can have the keyboard.
+  Menu > MIDI keyboard: Off, MIDI Support, Any port, Port 1-4 (MIDI Support
+  to begin with when it's there).
+- MIDI out: Track > Play on MIDI out sends a track to a MIDI instrument
+  instead of playing it in Groove: notes, General MIDI program, volume and
+  pan, a channel per instrument track and channel 10 for drums. Menu > MIDI
+  out: MIDI Support (from the "Groove" driver), Port 1-4 of a MIDI module
+  (MIDI_TxCommand), or Off. Song notes are sent when Groove's own sound
+  from that moment is heard; live notes at once; All Notes Off on stop.
+  Saved in songs.
+
 ## 0.2 (1 Nov 2026): the first release
 
 - Undo and Redo (Ctrl-Z, Ctrl-Y), up to 100 changes.

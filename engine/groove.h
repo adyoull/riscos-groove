@@ -89,6 +89,8 @@ typedef struct
   float pan;                    /* -1..1 */
   float reverb;                 /* send, 0..1 */
   int mute, solo, armed;
+  int midi_out;                 /* 1: played on a MIDI device (gr_engine_set_midi_out)
+                                   rather than by Groove, where there is one */
   float meter;                  /* peak level for the UI, decays */
 } gr_track;
 
@@ -195,6 +197,24 @@ int  gr_recording (const gr_engine *e);
 double gr_position (const gr_engine *e);         /* ticks, fractional */
 int  gr_busy (const gr_engine *e);               /* anything still sounding? */
 
+/* MIDI out. With a sender set, tracks with midi_out on are played by
+   sending MIDI instead of by Groove: their notes, and program, volume (CC7)
+   and pan (CC10) when they change. Each instrument track has a channel of
+   its own, in order and skipping channel 10 (index 9), which the drum
+   tracks share, as in exported MIDI files. A command is packed as MIDI
+   modules pack them: status | data1 << 8 | data2 << 16 | length << 24.
+   `frame` is when it should be heard, in the frames gr_frames counts (0:
+   now, for notes played live); the sender holds commands until the sound
+   rendered with them is being heard. Without a sender (bouncing to a WAV,
+   say), midi_out tracks play Groove's or the SoundFont's sound as usual. */
+typedef void gr_midi_sender (void *ctx, unsigned frame, unsigned cmd);
+void gr_engine_set_midi_out (gr_engine *e, gr_midi_sender *fn, void *ctx);
+/* Notes off on every channel MIDI out has used, and everything resent:
+   after a track's midi_out has been changed, say. */
+void gr_midi_out_reset (gr_engine *e);
+unsigned gr_frames (const gr_engine *e);        /* frames rendered so far */
+int  gr_patch_program (int patch);              /* Groove's sound's nearest GM program */
+
 /* Live playing (musical typing, MIDI, clicks on the piano roll). */
 void gr_live_on (gr_engine *e, int track, int pitch, int vel);
 void gr_live_off (gr_engine *e, int track, int pitch);
@@ -276,6 +296,9 @@ int  gr_midi_import (gr_song *s, const char *path, int tick, const char **why);
 /* Export the song as a type 1 MIDI file: a MIDI track per Groove track
    (not audio), drums on channel 10. */
 int  gr_midi_export (const gr_song *s, const char *path);
+/* A General MIDI drum key (35 kick, 38 snare, 42 hi-hat...) to the step
+   grid's row for it. */
+int  gr_drum_row_for_key (int key);
 
 /* ---- Maestro files (maestro.c) -------------------------------------------- */
 /* Import a RISC OS Maestro file (&AF1): a track per channel that has notes,

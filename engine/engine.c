@@ -196,6 +196,17 @@ struct gr_engine
   struct { int ch, key, left; } gm_off[GM_PENDING];
   int gm_noffs, gm_tail;
   float gm_send;                /* the SoundFont's reverb send */
+  /* MIDI out: the sender, frames rendered (its clock), what each channel
+     was last sent, which channels have been used, and notes waiting for
+     their note-off. */
+  gr_midi_sender *mo_fn;
+  void *mo_ctx;
+  unsigned frames;
+  int mo_live;                  /* sending for gr_live_on/off: now */
+  int mo_prog[16], mo_vol[16], mo_pan[16];
+  unsigned mo_used;
+  struct { int ch, key, left; } mo_off[GM_PENDING];
+  int mo_noffs;
 };
 
 /* ---------------------------------------------------------------------- */
@@ -287,10 +298,13 @@ static void gm_all_off (gr_engine *e)
   e->gm_noffs = 0;
 }
 
+static void mo_all_off (gr_engine *e);
+
 static void all_notes_off (gr_engine *e)
 {
   int i;
   gm_all_off (e);
+  mo_all_off (e);
   for (i = 0; i < NSYNTH; i++)
     if (e->sv[i].active && e->sv[i].track != LIVE_TRACK)
       {
@@ -778,6 +792,182 @@ static void gm_render (gr_engine *e, float *l, float *r, float *rv, int n)
 }
 
 /* ---------------------------------------------------------------------- */
+/* MIDI out                                                               */
+
+static int any_solo (const gr_song *s);
+
+static int out_track (const gr_engine *e, int track)
+{
+  const gr_track *t;
+  if (!e->mo_fn || track < 0 || track >= e->song->ntracks)
+    return 0;
+  t = &e->song->tracks[track];
+  return t->midi_out && t->type != TRK_AUDIO;
+}
+
+/* (A 16th instrument track has no channel of its own: it shares the last.) */
+static int mo_channel (const gr_song *s, int track)
+{
+  int ch = gm_channel (s, track);
+  return ch > 15 ? 15 : ch;
+}
+
+static void mo_send (gr_engine *e, int status, int d1, int d2)
+{
+  int len = (status & 0xF0) == 0xC0 ? 2 : 3;
+  e->mo_used |= 1u << (status & 15);
+  e->mo_fn (e->mo_ctx, e->mo_live ? 0 : e->frames,
+            (unsigned) status | (unsigned) (d1 & 127) << 8 | (unsigned) (d2 & 127) << 16 | (unsigned) len << 24);
+}
+
+/* Each channel's program, volume and pan, from its track; only what has
+   changed is sent. (A muted track's channel goes to volume 0, so held
+   notes fall silent too.) */
+static void mo_sync (gr_engine *e)
+{
+  gr_song *s = e->song;
+  int prog[16], vol[16], pan[16], t, ch, live, solo = any_solo (s);
+  for (ch = 0; ch < 16; ch++)
+    prog[ch] = -1;
+  for (t = 0; t < s->ntracks; t++)
+    {
+      const gr_track *tr = &s->tracks[t];
+      int on;
+      if (!out_track (e, t))
+        continue;
+      ch = mo_channel (s, t);
+      on = gm_audible (s, t, solo);
+      if (prog[ch] >= 0 && (vol[ch] > 0 || !on))
+        continue;               /* (the first drum track that can be heard) */
+      if (tr->type == TRK_DRUMS)
+        prog[ch] = tr->gm >= 0 ? tr->gm : tr->patch == KIT_ELECTRO ? GM_KIT_808 : GM_KIT_STANDARD;
+      else
+        prog[ch] = tr->gm >= 0 ? tr->gm : gr_patch_program (tr->patch);
+      vol[ch] = !on ? 0 : ch == 9 ? 127 : (int) (tr->vol * 127.0f + 0.5f);
+      pan[ch] = (int) ((tr->pan + 1.0f) * 63.5f);
+      if (vol[ch] > 127) vol[ch] = 127;
+      if (pan[ch] < 0) pan[ch] = 0;
+      if (pan[ch] > 127) pan[ch] = 127;
+    }
+  /* Settings go out at once, not when the sound now being rendered is
+     heard: a note played live mustn't overtake its channel's program. */
+  live = e->mo_live;
+  e->mo_live = 1;
+  for (ch = 0; ch < 16; ch++)
+    {
+      if (prog[ch] < 0)
+        continue;
+      if (prog[ch] != e->mo_prog[ch])
+        mo_send (e, 0xC0 | ch, prog[ch], 0);
+      if (vol[ch] != e->mo_vol[ch])
+        mo_send (e, 0xB0 | ch, 7, vol[ch]);
+      if (pan[ch] != e->mo_pan[ch])
+        mo_send (e, 0xB0 | ch, 10, pan[ch]);
+      e->mo_prog[ch] = prog[ch];
+      e->mo_vol[ch] = vol[ch];
+      e->mo_pan[ch] = pan[ch];
+    }
+  e->mo_live = live;
+}
+
+static void mo_off_now (gr_engine *e, int i)
+{
+  mo_send (e, 0x80 | e->mo_off[i].ch, e->mo_off[i].key, 64);
+  e->mo_off[i] = e->mo_off[--e->mo_noffs];
+}
+
+/* len_samples < 0: held until mo_note_off. */
+static void mo_note_on (gr_engine *e, int track, int pitch, int vel, int len_samples)
+{
+  gr_song *s = e->song;
+  gr_track *tr = &s->tracks[track];
+  int ch = mo_channel (s, track), key, i;
+  float level;
+  mo_sync (e);
+  if (tr->type == TRK_DRUMS)
+    {
+      key = gr_gm_drum_note (pitch % GR_DRUM_SOUNDS);
+      vel = (int) (vel * tr->vol / 0.8f + 0.5f);   /* (drum tracks share a channel) */
+      if (vel > 127) vel = 127;
+      if (vel < 1) return;
+      len_samples = GR_RATE / 10;   /* drums need no note-off, but some devices like one */
+    }
+  else
+    key = pitch & 127;
+  if (vel < 1)
+    vel = 1;
+  for (i = 0; i < e->mo_noffs; i++)
+    if (e->mo_off[i].ch == ch && e->mo_off[i].key == key)
+      {
+        mo_off_now (e, i);      /* the same key again: end the old note first */
+        break;
+      }
+  mo_send (e, 0x90 | ch, key, vel > 127 ? 127 : vel);
+  if (len_samples >= 0 && e->mo_noffs < GM_PENDING)
+    {
+      e->mo_off[e->mo_noffs].ch = ch;
+      e->mo_off[e->mo_noffs].key = key;
+      e->mo_off[e->mo_noffs].left = len_samples > 0 ? len_samples : 1;
+      e->mo_noffs++;
+    }
+  level = vel / 127.0f * (ch == 9 ? 0.8f : tr->vol) * 0.7f;
+  if (level > tr->meter)
+    tr->meter = level;
+}
+
+static void mo_note_off (gr_engine *e, int track, int pitch)
+{
+  if (e->song->tracks[track].type != TRK_DRUMS)
+    mo_send (e, 0x80 | mo_channel (e->song, track), pitch & 127, 64);
+}
+
+/* Note-offs that are due in the n frames just rendered. */
+static void mo_tick (gr_engine *e, int n)
+{
+  int i;
+  for (i = 0; i < e->mo_noffs; )
+    if ((e->mo_off[i].left -= n) <= 0)
+      mo_off_now (e, i);
+    else
+      i++;
+}
+
+static void mo_all_off (gr_engine *e)
+{
+  int ch;
+  if (!e->mo_fn)
+    return;
+  while (e->mo_noffs > 0)
+    mo_off_now (e, e->mo_noffs - 1);
+  for (ch = 0; ch < 16; ch++)
+    if (e->mo_used & (1u << ch))
+      mo_send (e, 0xB0 | ch, 123, 0);   /* all notes off (and so live notes too) */
+}
+
+void gr_midi_out_reset (gr_engine *e)
+{
+  int ch;
+  e->mo_live = 1;
+  mo_all_off (e);
+  e->mo_live = 0;
+  for (ch = 0; ch < 16; ch++)
+    e->mo_prog[ch] = e->mo_vol[ch] = e->mo_pan[ch] = -1;
+}
+
+void gr_engine_set_midi_out (gr_engine *e, gr_midi_sender *fn, void *ctx)
+{
+  if (e->mo_fn)
+    gr_midi_out_reset (e);
+  e->mo_fn = fn;
+  e->mo_ctx = ctx;
+  e->mo_used = 0;
+  e->mo_noffs = 0;
+  gr_midi_out_reset (e);
+}
+
+unsigned gr_frames (const gr_engine *e) { return e->frames; }
+
+/* ---------------------------------------------------------------------- */
 /* Transport                                                              */
 
 static double samples_per_tick (const gr_song *s)
@@ -1054,9 +1244,17 @@ void gr_live_on (gr_engine *e, int track, int pitch, int vel)
   gr_song *s = e->song;
   if (track < 0 || track >= s->ntracks)
     return;
+  if (out_track (e, track))
+    {
+      e->mo_live = 1;
+      mo_note_on (e, track, s->tracks[track].type == TRK_DRUMS ? pitch % GR_DRUM_SOUNDS : pitch, vel, -1);
+      e->mo_live = 0;
+    }
   if (s->tracks[track].type == TRK_DRUMS)
     {
-      if (gm_track (e, track))
+      if (out_track (e, track))
+        ;
+      else if (gm_track (e, track))
         gm_note_on (e, track, pitch % GR_DRUM_SOUNDS, vel, -1);
       else
         drum_on (e, track, s->tracks[track].patch, pitch % GR_DRUM_SOUNDS, vel);
@@ -1068,7 +1266,9 @@ void gr_live_on (gr_engine *e, int track, int pitch, int vel)
     }
   else if (s->tracks[track].type == TRK_INST)
     {
-      if (gm_track (e, track))
+      if (out_track (e, track))
+        ;
+      else if (gm_track (e, track))
         gm_note_on (e, track, pitch, vel, -1);
       else
         synth_on (e, track, s->tracks[track].patch, pitch, vel, -1);
@@ -1083,7 +1283,13 @@ void gr_live_off (gr_engine *e, int track, int pitch)
   int vel;
   if (track < 0 || track >= s->ntracks || s->tracks[track].type != TRK_INST)
     return;
-  if (gm_track (e, track))
+  if (out_track (e, track))
+    {
+      e->mo_live = 1;
+      mo_note_off (e, track, pitch);
+      e->mo_live = 0;
+    }
+  else if (gm_track (e, track))
     gm_note_off (e, track, pitch);
   else
     synth_off (e, track, pitch);
@@ -1149,7 +1355,16 @@ static void fire_tick (gr_engine *e, int tick)
           const gr_note *n = &p->notes[k];
           if (n->tick != local)
             continue;
-          if (gm_track (e, r->track))
+          if (out_track (e, r->track))
+            {
+              int len = n->len;
+              if (!gm_audible (s, r->track, solo))
+                continue;
+              if (tick + len > r->start + r->len)
+                len = r->start + r->len - tick;
+              mo_note_on (e, r->track, n->pitch, n->vel, (int) (len * spt));
+            }
+          else if (gm_track (e, r->track))
             {
               int len = n->len;
               if (!gm_audible (s, r->track, solo))
@@ -1265,6 +1480,8 @@ static void render_sub (gr_engine *e, float *l, float *r, int n)
 
   if (gm_synth ())
     gm_sync (e, solo);
+  if (e->mo_fn)
+    mo_sync (e);
 
   /* The count-in: a click on every beat, time standing still, then play. */
   if (e->count_left > 0)
@@ -1412,6 +1629,9 @@ static void render_sub (gr_engine *e, float *l, float *r, int n)
     }
   if (e->busy_tail > 0)
     e->busy_tail -= n;
+  if (e->mo_noffs)
+    mo_tick (e, n);
+  e->frames += (unsigned) n;
 }
 
 void gr_render (gr_engine *e, float *l, float *r, int n)

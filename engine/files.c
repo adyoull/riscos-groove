@@ -12,6 +12,7 @@
      master 0.80
      track 0 1 "Drums" 0.80 0.00 0.08 0 0 -1    type patch name vol pan reverb mute solo
                                                  sound (-1 Groove's, else SoundFont program/kit)
+                                                 MIDI out (1: played on a MIDI device)
      pattern 3 "Boom Bap" 384                    index name length, then its notes:
      n 0 24 0 120                                tick length pitch velocity
      end
@@ -207,7 +208,8 @@ int gr_song_save (const gr_song *s, const char *path)
       const gr_track *t = &s->tracks[i];
       fprintf (f, "track %d %d ", (int) t->type, t->patch);
       put_name (f, t->name);
-      fprintf (f, " %.2f %.2f %.2f %d %d %d\n", t->vol, t->pan, t->reverb, t->mute, t->solo, t->gm);
+      fprintf (f, " %.2f %.2f %.2f %d %d %d %d\n", t->vol, t->pan, t->reverb, t->mute, t->solo, t->gm,
+               t->midi_out != 0);
     }
   for (i = 0; i < GR_MAX_PATTERNS; i++)
     {
@@ -296,6 +298,8 @@ int gr_song_load (gr_song *s, const char *path)
               /* (songs from before SoundFont sounds have no seventh field) */
               if (sscanf (rest, "%*f %*f %*f %*d %*d %d", &g) == 1 && g >= -1 && g <= 127)
                 s->tracks[t].gm = g;
+              if (sscanf (rest, "%*f %*f %*f %*d %*d %*d %d", &g) == 1)   /* (from 0.2.2) */
+                s->tracks[t].midi_out = g != 0;
             }
         }
       else if (sscanf (line, "pattern %d", &a) == 1 && a >= 0 && a < GR_MAX_PATTERNS)

@@ -18,8 +18,8 @@
 #include "layout.h"
 
 #define APP_NAME     "Groove"
-#define APP_VERSION  "0.2"
-#define APP_DATE     "01-Nov-2026"
+#define APP_VERSION  "0.2.2"
+#define APP_DATE     "02-Nov-2026"
 #define TASK_WORD    0x4B534154
 
 #define FILETYPE_SONG  0xFFF       /* Text, until a type is allocated */
@@ -158,6 +158,33 @@ void keys_poll (void);                         /* releases keys let go */
 void keys_release_all (void);
 int keys_held_count (void);                 /* notes held from the keyboard */
 int  keys_held (void);
+
+/* midiin.c: a MIDI keyboard through the MIDI module (MIDI_RxCommand). */
+#define MIDI_SUPPORT (-3)          /* registered with MIDI Support as "Groove" */
+#define MIDI_OFF (-2)
+#define MIDI_ANY (-1)
+int  midiin_present (void);        /* is there a MIDI module? */
+void midiin_forget_module (void);  /* look again (and register with MIDI Support) */
+int  midiin_support (void);        /* registered with MIDI Support? */
+void midiin_quit (void);           /* leave MIDI Support */
+int  midiin_active (void);         /* on, and a module to read */
+int  midiin_port (void);           /* MIDI_OFF, MIDI_SUPPORT, MIDI_ANY or 0..3 */
+void midiin_set_port (int port);
+void midiin_poll (void);           /* on every return from the Wimp */
+void midiin_message (int status, int d1, int d2);
+void midiin_release_all (void);
+int  midiin_lit (void);            /* a note in the last quarter second */
+int  midiin_held (void);           /* notes held from MIDI (with the pedal's) */
+/* MIDI out (midiin.c too, as it shares Groove's MIDI Support driver):
+   where tracks with MIDI out on are sent. MIDI_OFF, MIDI_SUPPORT or a
+   MIDI module's port 0..3. */
+int  midiout_port (void);
+void midiout_set_port (int port);
+int  midiout_on (void);            /* somewhere to send, so MIDI out tracks use it */
+int  midiout_pending (void);       /* commands waiting for their sound to be heard */
+void midiout_poll (void);          /* send what is due */
+void midiout_reset (void);         /* notes off, and resend each channel's settings */
+void arrange_midi_light (void);    /* redraw the display's MIDI light */
 
 /* savebox.c */
 int  savebox_create (void);

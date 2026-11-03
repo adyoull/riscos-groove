@@ -280,7 +280,7 @@ static void draw_header (int ox, int oy, const int *clip, int t)
   gfx_text (x0 + b.x0, top + b.y0 + 10, label, C_TEXT, sel ? C_HEADER_SEL : C_HEADER, 0);
   if (tr->type != TRK_AUDIO)
     gfx_text (x0 + b.x1, top + b.y0 + 10,
-              tr->type == TRK_DRUMS ? gr_sound_name (tr) : "",
+              tr->midi_out && midiout_on () ? "MIDI out" : tr->type == TRK_DRUMS ? gr_sound_name (tr) : "",
               C_TEXT_DIM, sel ? C_HEADER_SEL : C_HEADER, 2);
 
   b = lay_header_box (HIT_MUTE);
@@ -605,6 +605,12 @@ static void paint_tool (int ox, int oy, const int *clip)
           gfx_text (x1 - 20, cy - 10, buf, rec ? C_RECORD : C_LCD_TEXT, C_LCD, 2);
           if (playing && sound_underruns () != app.underruns_at_play)
             gfx_text (x1 - 100, cy - 10, "!", C_RECORD, C_LCD, 2);   /* the sound glitched */
+          if (midiin_active ())
+            {
+              /* The MIDI light: a small dot, lit while notes come in. */
+              gfx_colour (midiin_lit () ? C_LCD_TEXT : 0x2E4A38);
+              gfx_circle (x0 + 10, y1 - 10, 4);
+            }
           break;
         case TB_TEMPO:
           gfx_colour (C_LCD);
@@ -689,6 +695,13 @@ void arrange_tool_redraw (int *b)
       paint_tool (b[1] - b[5], b[4] - b[6], &b[7]);
       _swix (Wimp_GetRectangle, _IN (1) | _OUT (0), b, &more);
     }
+}
+
+static void redraw_tool_button (int i);
+void arrange_midi_light (void)
+{
+  if (app.main_open)
+    redraw_tool_button (TB_LCD);
 }
 
 static void redraw_tool_button (int i)

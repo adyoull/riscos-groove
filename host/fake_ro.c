@@ -10,6 +10,9 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdint.h>
+#ifndef OS_SWINumberFromString
+#define OS_SWINumberFromString 0x39
+#endif
 #include <stdlib.h>
 #include <string.h>
 #include "stubs/swis.h"
@@ -457,6 +460,66 @@ _kernel_oserror *_swix (int swi, unsigned mask, ...)
           fprintf (fake.log, "G %d %d %d %d\n", (short) (v[1] | v[2] << 8), (short) (v[3] | v[4] << 8),
                    (short) (v[5] | v[6] << 8), (short) (v[7] | v[8] << 8));
       }
+      break;
+    case OS_SWINumberFromString:
+      if (fake.midi_present && !strcmp ((const char *) (intptr_t) r[1], "MIDI_RxCommand"))
+        out[0] = 0x404C8;
+      else if (fake.ms_present && !strcmp ((const char *) (intptr_t) r[1], "MIDISupport_CreateDriver"))
+        out[0] = 0x4EE83;
+      else
+        {
+          static _kernel_oserror unknown = { 0x1E6, "SWI name not known" };
+          return &unknown;
+        }
+      break;
+    case 0x4EE83:               /* MIDISupport_CreateDriver */
+      fake.ms_flags = r[0];
+      snprintf (fake.ms_name, sizeof fake.ms_name, "%.31s", (const char *) (intptr_t) r[1]);
+      fake.ms_version = r[2];
+      snprintf (fake.ms_date, sizeof fake.ms_date, "%.31s", (const char *) (intptr_t) r[3]);
+      out[0] = fake.ms_handle = 7;
+      break;
+    case 0x4EE85:               /* MIDISupport_Receive: R0=1, R1=driver, R2=2 (a command) */
+      if (!fake.ms_present || r[1] != fake.ms_handle || r[0] != 1 || r[2] != 2)
+        {
+          static _kernel_oserror bad = { 0x1E6, "Invalid driver" };
+          return &bad;
+        }
+      out[0] = fake.ms_i < fake.ms_n ? fake.ms_q[fake.ms_i++] : 0;
+      break;
+    case 0x4EE84:               /* MIDISupport_Send: R0=1 (a command), R1=driver, R2=command */
+      if (!fake.ms_present || r[1] != fake.ms_handle || r[0] != 1)
+        {
+          static _kernel_oserror bad = { 0x1E6, "Invalid driver" };
+          return &bad;
+        }
+      if (fake.ms_nsent < 256)
+        {
+          fake.ms_sent_at[fake.ms_nsent] = fake.frames_played;
+          fake.ms_sent[fake.ms_nsent++] = (unsigned) r[2];
+        }
+      break;
+    case 0x404CA:               /* MIDI_TxCommand: R0=command (port in bits 28-31), R1=time */
+      if (!fake.midi_present)
+        {
+          static _kernel_oserror unknown = { 0x1E6, "SWI &404CA not known" };
+          return &unknown;
+        }
+      if (fake.midi_ntx < 256)
+        fake.midi_tx[fake.midi_ntx++] = (unsigned) r[0];
+      break;
+    case 0x4EE81:               /* MIDISupport_RemoveDriver */
+      fake.ms_removed = r[1];
+      break;
+    case 0x404C8:               /* MIDI_RxCommand */
+      if (!fake.midi_present)
+        {
+          static _kernel_oserror unknown = { 0x1E6, "SWI &404C8 not known" };
+          return &unknown;
+        }
+      fake.midi_port_asked = r[0];
+      out[0] = fake.midi_i < fake.midi_n ? fake.midi_q[fake.midi_i++] : 0;
+      out[1] = 0;
       break;
     case 0x40183:               /* Sound_InstallVoice: RISC OS 5's nine voices */
       {

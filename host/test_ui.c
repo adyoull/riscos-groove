@@ -1244,6 +1244,217 @@ int fake_script (int *b, int *reason)
         CHECK (s[5] == (int) ((long long) app.view.hscroll * app.view.bar_w / GR_BAR) && s[5] > 800,
                "and moving along the song another way moves the scroll bar with it");
       }
+      /* A MIDI keyboard, through a MIDI module. */
+      gr_stop (app.eng);
+      arrange_new_song ();
+      app.count_in = 0;
+      fake.midi_present = 1;
+      CHECK (midiin_present () == 0, "(no MIDI module was there when Groove first looked)");
+      _swix (Wimp_SetCaretPosition, _INR (0, 5), app.w_main, -1, 0, 0, 1 << 25, -1);
+      app.sel_track = 1;
+      *reason = 0;
+      return 1;
+    case 146:
+      CHECK (!midiin_active (), "without a MIDI module, MIDI input is off");
+      midiin_forget_module ();          /* (as when the MIDI module is loaded later) */
+      CHECK (midiin_present () && midiin_active () && midiin_port () == MIDI_ANY,
+             "with a MIDI module, Groove listens to any port");
+      key (b, reason, app.w_main, 'r');
+      return 1;
+    case 147:
+      CHECK (gr_recording (app.eng), "(recording)");
+      fake.midi_n = fake.midi_i = 0;
+      fake.midi_q[fake.midi_n++] = 0x90 | 60 << 8 | 90 << 16 | 3 << 24;   /* note on, middle C */
+      fake.midi_q[fake.midi_n++] = 0x91 | 67 << 8 | 100 << 16 | 3 << 24;  /* and G, another channel */
+      *reason = 0;
+      return 1;
+    case 148:
+      CHECK (midiin_held () == 2 && fake.midi_port_asked == -1, "notes from the MIDI keyboard play");
+      CHECK (midiin_lit (), "and light the MIDI light");
+      fake.midi_q[fake.midi_n++] = 0xB0 | 64 << 8 | 127 << 16 | 3 << 24;  /* sustain pedal down */
+      fake.midi_q[fake.midi_n++] = 0x80 | 60 << 8 | 64 << 16 | 3 << 24;   /* C up */
+      fake.midi_q[fake.midi_n++] = 0x91 | 67 << 8 | 0 << 16 | 3 << 24;    /* G up (velocity 0) */
+      *reason = 0;
+      return 1;
+    case 149:
+      CHECK (midiin_held () == 1, "with the pedal down on its channel, C is held; G (another channel) ends");
+      fake.midi_q[fake.midi_n++] = 0xB0 | 64 << 8 | 0 << 16 | 3 << 24;    /* pedal up */
+      *reason = 0;
+      return 1;
+    case 150:
+      CHECK (midiin_held () == 0, "letting the pedal go ends the note");
+      key (b, reason, app.w_main, 'r');
+      return 1;
+    case 151:
+      {
+        int i, k, c = 0, g = 0;
+        for (i = 0; i < GR_MAX_REGIONS; i++)
+          if (app.song.regions[i].used && app.song.regions[i].pattern >= 0)
+            {
+              const gr_pattern *p = &app.song.patterns[app.song.regions[i].pattern];
+              for (k = 0; k < p->nnotes; k++)
+                {
+                  c |= p->notes[k].pitch == 60 && p->notes[k].vel == 90;
+                  g |= p->notes[k].pitch == 67 && p->notes[k].vel == 100;
+                }
+            }
+        CHECK (!gr_recording (app.eng) && c && g, "they're recorded, with the keyboard's velocity");
+      }
+      /* Another program has the focus: Groove leaves the MIDI input alone. */
+      _swix (Wimp_SetCaretPosition, _INR (0, 5), -1, -1, 0, 0, 1 << 25, -1);
+      fake.midi_n = fake.midi_i = 0;
+      fake.midi_q[fake.midi_n++] = 0x90 | 62 << 8 | 80 << 16 | 3 << 24;
+      *reason = 0;
+      return 1;
+    case 152:
+      CHECK (fake.midi_i == 0 && midiin_held () == 0, "without the input focus Groove doesn't read the MIDI keyboard");
+      _swix (Wimp_SetCaretPosition, _INR (0, 5), app.w_main, -1, 0, 0, 1 << 25, -1);
+      *reason = 0;
+      return 1;
+    case 153:
+      CHECK (fake.midi_i == 1 && midiin_held () == 0, "and what waited meanwhile is thrown away, not played late");
+      app.sel_track = 0;                  /* the drums */
+      fake.midi_q[fake.midi_n++] = 0x99 | 38 << 8 | 110 << 16 | 3 << 24;  /* GM snare */
+      *reason = 0;
+      return 1;
+    case 154:
+      CHECK (midiin_held () == 1 && gr_drum_row_for_key (38) == 1, "on a drum track, a drum key plays its drum");
+      b[0] = 6; b[1] = 0; b[2] = -1;     /* MIDI keyboard > Off */
+      app_main_menu (100, 900);
+      *reason = 9;
+      return 1;
+    case 155:
+      CHECK (midiin_port () == MIDI_OFF && !midiin_active () && midiin_held () == 0,
+             "MIDI keyboard > Off stops listening (and lets go of held notes)");
+      /* Pete Everett's MIDI Support, loaded now: Groove registers as a driver. */
+      fake.ms_present = 1;
+      b[0] = 6; b[1] = 1; b[2] = -1;     /* MIDI keyboard > MIDI Support */
+      app_main_menu (100, 900);          /* (building the menu registers) */
+      CHECK (midiin_support () && !strcmp (fake.ms_name, "Groove") && fake.ms_flags == (1 | 2 | 4 | 8),
+             "with MIDI Support there, Groove registers as a driver called Groove (sends and receives, queued, whole messages)");
+      CHECK (fake.ms_version == 22 && fake.ms_date[0] != '0' && !strchr (fake.ms_date, '-'),
+             "it gives MIDI Support its version in hundredths (22, shown as 0:22) and a date like the others' (2 Nov 2026)");
+      *reason = 9;
+      return 1;
+    case 156:
+      CHECK (midiin_port () == MIDI_SUPPORT && midiin_active (), "MIDI keyboard > MIDI Support listens to what's routed to Groove");
+      _swix (Wimp_SetCaretPosition, _INR (0, 5), -1, -1, 0, 0, 1 << 25, -1);   /* another program has the focus */
+      app.sel_track = 1;
+      fake.ms_n = fake.ms_i = 0;
+      fake.ms_q[fake.ms_n++] = 0x90 | 64 << 8 | 70 << 16 | 3 << 24;
+      *reason = 0;
+      return 1;
+    case 157:
+      CHECK (fake.ms_i == 1 && midiin_held () == 1,
+             "notes routed to Groove play even when another program has the input focus");
+      fake.ms_q[fake.ms_n++] = 0x80 | 64 << 8 | 0 << 16 | 3 << 24;
+      *reason = 0;
+      return 1;
+    case 158:
+      CHECK (midiin_held () == 0, "and end");
+      /* ---- MIDI out ---- */
+      CHECK (midiout_port () == MIDI_SUPPORT && midiout_on (),
+             "MIDI out goes to MIDI Support to begin with, when it's there");
+      app.sel_track = 1;
+      app.song.tracks[1].type = TRK_INST;
+      fake.ms_nsent = 0;
+      b[0] = 1; b[1] = 6; b[2] = -1;     /* Track > Play on MIDI out */
+      app_main_menu (100, 900);
+      *reason = 9;
+      return 1;
+    case 159:
+      CHECK (app.song.tracks[1].midi_out == 1, "Track > Play on MIDI out ticks the track");
+      fake.ms_q[fake.ms_n++] = 0x90 | 62 << 8 | 80 << 16 | 3 << 24;   /* a key from the keyboard */
+      *reason = 0;
+      return 1;
+    case 160:
+      {
+        int i, on = -1, prog = -1;
+        for (i = 0; i < fake.ms_nsent; i++)
+          {
+            if ((fake.ms_sent[i] & 0xF0) == 0xC0) prog = i;
+            if ((fake.ms_sent[i] & 0xFFFFF0) == (0x90u | 62 << 8 | 80 << 16)) on = i;
+          }
+        CHECK (on >= 0 && prog >= 0 && prog < on && (fake.ms_sent[on] >> 24) == 3,
+               "a note played on a MIDI out track goes out through MIDI Support straight away, after its program");
+      }
+      fake.ms_q[fake.ms_n++] = 0x80 | 62 << 8 | 3 << 24;
+      *reason = 0;
+      return 1;
+    case 161:
+      {
+        int p = gr_pattern_new (&app.song, "Out", GR_BAR);
+        gr_pattern_add_note (&app.song.patterns[p], 0, GR_PPQ, 67, 100);
+        gr_region_add (&app.song, 1, 0, GR_BAR, p);
+      }
+      CHECK (fake.ms_nsent >= 1 && (fake.ms_sent[fake.ms_nsent - 1] & 0xFFF0) == (0x80u | 62 << 8),
+             "and its note-off");
+      fake.ms_nsent = 0;
+      saved_tracks = (int) fake.frames_played;
+      gr_locate (app.eng, 0);
+      gr_play (app.eng);
+      wait_nulls = 0;
+      *reason = 0;
+      return 1;
+    case 162:
+      {
+        int i, on = -1;
+        for (i = 0; i < fake.ms_nsent; i++)
+          if ((fake.ms_sent[i] & 0xFFFFF0) == (0x90u | 67 << 8 | 100 << 16)) on = i;
+        if (on < 0 && ++wait_nulls < 20)
+          {
+            step--;               /* (wait for it) */
+            *reason = 0;
+            return 1;
+          }
+        CHECK (on >= 0 && (int) fake.ms_sent_at[on] - saved_tracks >= 2000,
+               "a MIDI out track's notes in the song go out when Groove's sound from that moment is heard (~70 ms later)");
+      }
+      gr_stop (app.eng);
+      fake.ms_nsent = 0;
+      wait_nulls = 0;
+      *reason = 0;
+      return 1;
+    case 163:
+      {
+        int i, off = 0;
+        for (i = 0; i < fake.ms_nsent; i++)
+          if ((fake.ms_sent[i] & 0xFFF0) == (0xB0u | 123 << 8)) off = 1;
+        if (!off && ++wait_nulls < 20)
+          {
+            step--;
+            *reason = 0;
+            return 1;
+          }
+        CHECK (off, "stopping sends All Notes Off");
+      }
+      fake.midi_present = 1;
+      b[0] = 7; b[1] = 3; b[2] = -1;     /* MIDI out > Port 2 */
+      app_main_menu (100, 900);
+      *reason = 9;
+      return 1;
+    case 164:
+      CHECK (midiout_port () == 1, "MIDI out > Port 2 sends to a MIDI module's second port");
+      fake.midi_ntx = 0;
+      gr_live_on (app.eng, 1, 69, 90);
+      gr_live_off (app.eng, 1, 69);
+      {
+        int i, on = 0;
+        for (i = 0; i < fake.midi_ntx; i++)
+          if (fake.midi_tx[i] == (0x13000090u | 69 << 8 | 90 << 16)) on = 1;
+        CHECK (on, "with MIDI_TxCommand, port in the top bits");
+      }
+      b[0] = 7; b[1] = 0; b[2] = -1;     /* MIDI out > Off */
+      app_main_menu (100, 900);
+      *reason = 9;
+      return 1;
+    case 165:
+      CHECK (midiout_port () == MIDI_OFF && !midiout_on (), "MIDI out > Off");
+      fake.midi_ntx = fake.ms_nsent = 0;
+      gr_live_on (app.eng, 1, 69, 90);
+      gr_live_off (app.eng, 1, 69);
+      CHECK (fake.midi_ntx == 0 && fake.ms_nsent == 0 && gr_busy (app.eng),
+             "with MIDI out off, a MIDI out track plays Groove's own sound");
       mark_saved ();
       *reason = 0;
       return 1;
@@ -1267,7 +1478,8 @@ int main (void)
   test_workspace ();
   rc = groove_main ();
   CHECK (rc == 0, "Groove exits cleanly");
-  CHECK (step == 147, "the whole script ran");
+  CHECK (step == 167, "the whole script ran");
+  CHECK (fake.ms_removed == 7, "on quitting, Groove leaves MIDI Support (RemoveDriver)");
   CHECK (fake.closed_down && fake.ring == NULL, "on quit: SharedSound handler removed, Wimp_CloseDown");
   CHECK (fake.errors == 4, "four error boxes in all (two quit questions, no web browser, load question)");
   CHECK (fake.nulls_while_masked == 0, "no null events were forced on the app while it was idle");

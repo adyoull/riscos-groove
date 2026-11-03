@@ -52,7 +52,7 @@ a { color:#1f5fa8; }
 <h1>Groove User Guide</h1>
 <p>Making music on RISC OS</p>
 <p>Start here if you've never made music on a computer before. If you have, the Technical Stuff boxes and Chapter 19 are for you.</p>
-<span class="badge">Groove 0.2</span>
+<span class="badge">Groove 0.2.2</span>
 </div>
 </header>
 <main>
@@ -87,7 +87,7 @@ a { color:#1f5fa8; }
 <p>The pictures are screenshots of Groove running on RISC OS 5.</p>
 
 <h4>This is an early version</h4>
-<p>Groove 0.2 is an early version. It's still being tested, so you may come across bugs. If you change something by mistake, <kbd>Ctrl</kbd>+<kbd>Z</kbd> (Undo) takes it back (<a href="#ch3">Chapter 3</a>), but save your song now and then as well (<a href="#ch13">Chapter 13</a>).</p>
+<p>Groove 0.2.2 is an early version. It's still being tested, so you may come across bugs. If you change something by mistake, <kbd>Ctrl</kbd>+<kbd>Z</kbd> (Undo) takes it back (<a href="#ch3">Chapter 3</a>), but save your song now and then as well (<a href="#ch13">Chapter 13</a>).</p>
 
 <h4>What we assume you know</h4>
 <p>Not much. You should know the three mouse buttons (<b>Select</b> on the left, <b>Menu</b> in the middle, <b>Adjust</b> on the right), and how to drag a file from a Filer window into a program. You don't need to know anything about music.</p>
@@ -114,7 +114,8 @@ a { color:#1f5fa8; }
 <li><b>Loops:</b> 18 ready-made loops (drums, bass, keys and lead) that you drag into your song. They're played in your song's key.</li>
 <li><b>Drums:</b> draw a beat on a grid of eight drums and sixteen steps a bar. Two drum kits.</li>
 <li><b>Notes:</b> draw, move and delete notes in a piano roll; select several to move, copy, transpose or make louder together.</li>
-<li><b>Musical typing:</b> play your computer keyboard like a piano, chords included.</li>
+<li><b>Musical typing:</b> play your computer keyboard like a piano, chords included, or a MIDI keyboard.</li>
+<li><b>MIDI out:</b> let a MIDI keyboard, sound module or software synth play any track.</li>
 <li><b>Recording:</b> record what you play, after a bar of clicks to get ready; Groove tidies the timing for you.</li>
 <li><b>Arranging:</b> move, stretch, split, copy and paste regions; rename and reorder tracks.</li>
 <li><b>Undo:</b> take back changes, up to 100 of them, and redo them again.</li>
@@ -141,7 +142,7 @@ a { color:#1f5fa8; }
 
 <h4>Installing</h4>
 <ol class="steps">
-<li>Unzip <code>Groove.zip</code> with SparkFS or PackMan's unzip, so the files keep their RISC OS file types.</li>
+<li>Unzip <code>Groove-0.2.2.zip</code> with SparkFS or PackMan's unzip, so the files keep their RISC OS file types.</li>
 <li>Drag <b>!Groove</b> to wherever you keep your applications, for example your <code>Apps</code> directory.</li>
 <li>If you want SoundFont sounds, install <b>!SoftMIDI</b> as well, and open the directory it's in once, so the Filer sees it.</li>
 </ol>
@@ -375,6 +376,29 @@ a { color:#1f5fa8; }
 
 <div class="box tech"><b class="label">TECHNICAL STUFF</b>RISC OS only sends programs two held keys at a time. While a note is held, Groove also reads the keyboard directly, so chords of three or more notes work. Some cheap keyboards can't report every combination of keys themselves; no program can get round that.</div>
 
+<h4>Playing a MIDI keyboard</h4>
+<p>If you have a MIDI keyboard, plugged in by USB or through a MIDI interface, Groove can play it like the computer keyboard: it plays the selected track, the harder you press the louder the note, and recording works the same way. On a drum track, the keyboard's drum keys play the drums (the General MIDI layout: the C two octaves below middle C is the kick, the D above it the snare, and so on). The sustain pedal holds notes until you let it go.</p>
+<p>Groove can hear a MIDI keyboard in two ways. Use whichever your MIDI software provides.</p>
+
+<h4>Through MIDI Support</h4>
+<p>Pete Everett's MIDI Support (<b>!MidiSupp</b>, his RISC OS 5 version of ESP's MIDI system) connects MIDI things together: USB and serial MIDI ports, his on-screen MIDIKeyboard, synths, and programs like Groove. When MIDI Support is loaded, Groove joins in as a <i>driver</i> called <b>Groove</b>, and you connect what you play to it:</p>
+<ol class="steps">
+<li>Run <b>!MidiSupp</b> (once is enough; it stays loaded), then start Groove.</li>
+<li>In the MIDI Manager, connect your keyboard's port (or MIDIKeyboard) to <b>Groove</b>. Or type it at the command line (<kbd>F12</kbd>, or a task window): <code>*MIDIConnect MIDIPort0 Groove</code>, using the names <code>*MIDIMap</code> lists.</li>
+<li>Click the name of the track you want to play, and play.</li>
+</ol>
+<figure><img src="images/midi-support.png" alt="MIDIKeyboard playing Groove"><figcaption>Pete Everett's MIDIKeyboard connected to Groove through MIDI Support: a run up and a run down, recorded on the Electric Piano track.</figcaption></figure>
+<p>Because you've connected it to Groove, the keyboard plays Groove whichever window has the input focus. When Groove quits, it leaves MIDI Support, and <b>Groove</b> goes from the list.</p>
+
+<h4>Through a MIDI module's ports</h4>
+<p>Without MIDI Support, Groove reads the ports of a MIDI module directly. Rick Murray and Dave Hinton's USBMIDI module is the usual one: it handles USB MIDI keyboards and USB MIDI interfaces (with DIN sockets for older instruments), up to four MIDI ports. With a MIDI module loaded, Groove listens to the keyboard straight away, on any port.</p>
+<div class="box rem"><b class="label">REMEMBER</b>This way, like the computer keyboard, the MIDI keyboard plays Groove only while one of Groove's windows has the input focus. That way, another music program (a score editor, say) can have the keyboard when you're working in it. Click in the song window to bring the keyboard back to Groove.</div>
+
+<h4>Choosing</h4>
+<figure><img src="images/midi-menu.png" alt="The MIDI keyboard menu"><figcaption>Menu &gt; MIDI keyboard, with MIDI Support loaded.</figcaption></figure>
+<p>Choose <b>MIDI keyboard</b> in the main menu to pick <b>MIDI Support</b>, <b>Any port</b> or one port of a MIDI module, or <b>Off</b>. Groove starts with MIDI Support if it's loaded, otherwise any port. Without either, the item says <b>MIDI keyboard (needs MIDI)</b>.</p>
+<p>When MIDI input is on, a small dot shows at the top left of the toolbar's display, and lights up while notes are coming in.</p>
+
 <h3 class="chapter" id="ch10"><span>10</span> Recording what you play</h3>
 
 <p>Recording puts what you play on the keyboard into a new region on the track.</p>
@@ -449,6 +473,19 @@ a { color:#1f5fa8; }
 <div class="box tip"><b class="label">TIP</b>A song that uses SoundFont sounds still plays on a computer without !SoftMIDI: Groove tells you it couldn't load a SoundFont, and plays its own sounds on those tracks instead.</div>
 
 <div class="box tech"><b class="label">TECHNICAL STUFF</b>The SoundFont is played by SoftMIDI's library inside Groove. Each instrument track has a MIDI channel of its own. All drum tracks share MIDI channel 10, the only one that plays kits, so if two drum tracks use SoundFont kits, they use the first one's kit and pan. That leaves 15 channels for instruments: a song of 16 instrument tracks with SoundFont sounds needs a second SoundFont player for the last one, which Groove loads when it's first needed (it takes the SoundFont's size in memory again; until then that track plays Groove's own nearest sound). Up to 48 SoundFont notes can sound at once.</div>
+
+<h4>Playing on a MIDI instrument: MIDI out</h4>
+<p>A track can be played by a MIDI instrument instead of by Groove: a keyboard or sound module on a USB or MIDI cable, or a software synth such as Pete Everett's MidiSynth. Select the track and choose <b>Track &rarr; Play on MIDI out</b>. The track's header then says <b>MIDI out</b>, and its notes, its sound (as a General MIDI program), its volume and its pan are sent to the instrument; muting the track turns it down there.</p>
+<figure><img src="images/midi-out-track.png" alt="A track on MIDI out"><figcaption>The Electric Piano track playing on MIDI out.</figcaption></figure>
+<p>Where it's sent is chosen with <b>MIDI out</b> in the main menu:</p>
+<ul>
+<li><b>MIDI Support</b>: from Groove's <b>Groove</b> driver to whatever you connect it to in the MIDI Manager, or with <code>*MIDIConnect Groove MIDISynth</code> (or a port name: <code>*MIDIMap</code> lists them). Groove starts with this when MIDI Support is loaded.</li>
+<li><b>Port 1</b> to <b>Port 4</b>: straight to a MIDI module's port, such as USBMIDI's.</li>
+<li><b>Off</b>: nothing is sent, and MIDI out tracks play Groove's own sound (or their SoundFont sound) instead. The same happens when there's nowhere to send to.</li>
+</ul>
+<figure><img src="images/midi-out-menu.png" alt="The MIDI out menu"><figcaption>Menu &gt; MIDI out, with MIDI Support loaded.</figcaption></figure>
+<p>Notes you play live go out at once. Notes from the song go out when Groove's own sound from the same moment reaches your speakers, so the instrument plays in time with the rest of the song.</p>
+<div class="box tech"><b class="label">TECHNICAL STUFF</b>Each instrument track has a MIDI channel of its own, in order, and drum tracks share channel 10 (with General MIDI drum keys), as in exported MIDI files. A software synth adds its own delay (MidiSynth about 50 ms), so it sounds slightly after Groove; a hardware instrument adds only a few milliseconds. Stopping sends All Notes Off. A WAV export doesn't include what a MIDI instrument plays: Groove's own sound stands in for those tracks.</div>
 
 <!-- ======================================================================= -->
 <h2 class="part" id="part4">Part IV: Files<small>Saving, exporting and bringing music in</small></h2>
@@ -610,9 +647,11 @@ a { color:#1f5fa8; }
 <table>
 <tr><th>Menu</th><th>Items</th></tr>
 <tr><td>Song</td><td>New; Save...; Export as WAV...; Export as MIDI...; Key &rarr; (the 12 keys); Time signature &rarr; (2/4 to 12/8, from the playhead's bar); Import WAV, MIDI, Maestro: drag in (a reminder)</td></tr>
-<tr><td>Track</td><td>New drummer track; New instrument track; New audio track; Sound &rarr;; Rename &rarr;; Delete track</td></tr>
+<tr><td>Track</td><td>New drummer track; New instrument track; New audio track; Sound &rarr;; Rename &rarr;; Delete track; Play on MIDI out</td></tr>
 <tr><td>Region</td><td>Edit; Duplicate; Delete; Split at playhead (<kbd>Ctrl</kbd>+<kbd>T</kbd>); Copy (<kbd>Ctrl</kbd>+<kbd>C</kbd>); Paste (<kbd>Ctrl</kbd>+<kbd>V</kbd>)</td></tr>
 <tr><td>Loop browser, Editor, Musical typing</td><td>Open those windows (<kbd>F7</kbd>, <kbd>F8</kbd>, <kbd>F9</kbd>)</td></tr>
+<tr><td>MIDI keyboard</td><td>Off; MIDI Support; Any port; Port 1 to Port 4: where Groove listens for a MIDI keyboard</td></tr>
+<tr><td>MIDI out</td><td>Off; MIDI Support; Port 1 to Port 4: where tracks on MIDI out are sent</td></tr>
 <tr><td>Cycle, Metronome, Count-in, Merge recordings, Follow playhead</td><td>Turn each on or off (ticked when on). Count-in and Follow playhead start on.</td></tr>
 <tr><td>Undo, Redo</td><td>Take back the last change, or put it back (<kbd>Ctrl</kbd>+<kbd>Z</kbd>, <kbd>Ctrl</kbd>+<kbd>Y</kbd>)</td></tr>
 </table>

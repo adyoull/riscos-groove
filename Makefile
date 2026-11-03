@@ -18,7 +18,7 @@ SM := third_party/softmidi
 SOFTMIDI := $(SM)/src/midisynth.c $(SM)/src/output.c $(SM)/src/output_ssb.c $(SM)/src/output_dr.c
 SM_INC := -I$(SM)/include -I$(SM)/third_party/TinySoundFont
 RISCOS := riscos/main.c riscos/arrange.c riscos/editor.c riscos/browser.c riscos/keys.c \
-          riscos/savebox.c riscos/gfx.c riscos/sound.c riscos/layout.c riscos/startlog.c
+          riscos/savebox.c riscos/gfx.c riscos/sound.c riscos/layout.c riscos/startlog.c riscos/midiin.c
 HEADERS := engine/groove.h engine/place.h engine/audioin.h engine/gm_internal.h riscos/app.h riscos/gfx.h riscos/layout.h
 OUT := out
 

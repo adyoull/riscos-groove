@@ -174,7 +174,7 @@ static int nearest_patch (int program)
 }
 
 /* A GM drum key's row in the step grid. */
-static int drum_row (int key)
+int gr_drum_row_for_key (int key)
 {
   switch (key)
     {
@@ -328,7 +328,7 @@ int gr_midi_import (gr_song *s, const char *path, int from, const char **why)
           m->notes[k].start = (int) ((long long) m->notes[k].start * GR_PPQ / division);
           m->notes[k].end = (int) ((long long) m->notes[k].end * GR_PPQ / division);
           if (drums)
-            m->notes[k].key = drum_row (m->notes[k].key);
+            m->notes[k].key = gr_drum_row_for_key (m->notes[k].key);
         }
       made++;
       if (gr_place_notes (s, t, m->notes, m->n, from, &full_at, &dropped))
@@ -401,7 +401,7 @@ static int cmp_ev (const void *a, const void *b)
 }
 
 /* Groove's own sounds as GM programs, for other programs to play. */
-static int patch_program (int patch)
+int gr_patch_program (int patch)
 {
   static const int gm[PATCH_COUNT] = { 4, 38, 89, 80, 24, 16, 14 };
   return patch >= 0 && patch < PATCH_COUNT ? gm[patch] : 0;
@@ -534,7 +534,7 @@ int gr_midi_export (const gr_song *s, const char *path)
       rc |= put (&b, tr->name, (size_t) len);
       hd[0] = 0; hd[1] = (unsigned char) (0xC0 | chn);
       hd[2] = (unsigned char) (tr->gm >= 0 ? tr->gm : drums ? (tr->patch == KIT_ELECTRO ? GM_KIT_808 : 0)
-                               : patch_program (tr->patch));
+                               : gr_patch_program (tr->patch));
       rc |= put (&b, hd, 3);
       hd[0] = 0; hd[1] = (unsigned char) (0xB0 | chn); hd[2] = 7;
       hd[3] = (unsigned char) (tr->vol * 127.0f + 0.5f > 127 ? 127 : tr->vol * 127.0f + 0.5f);

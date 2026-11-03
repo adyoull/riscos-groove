@@ -1177,6 +1177,119 @@ static void test_maestro (const char *dir)
 
 /* Sixteen tracks: the most a song holds; MIDI channels for each; and the
    16th instrument track's second SoundFont player. */
+/* MIDI out: what a sender is given. */
+static struct { unsigned frame, cmd; } mo_log[512];
+static int mo_n;
+static void mo_capture (void *ctx, unsigned frame, unsigned cmd)
+{
+  (void) ctx;
+  if (mo_n < 512)
+    {
+      mo_log[mo_n].frame = frame;
+      mo_log[mo_n].cmd = cmd;
+      mo_n++;
+    }
+}
+
+static int mo_find (unsigned cmd, unsigned mask)
+{
+  int i;
+  for (i = 0; i < mo_n; i++)
+    if ((mo_log[i].cmd & mask) == cmd)
+      return i;
+  return -1;
+}
+
+static void test_midi_out (void)
+{
+  static gr_song s, b;
+  gr_engine *e;
+  int k, d, p, i, on, off;
+  float peak;
+  double spt = GR_RATE * 60.0 / (120.0 * GR_PPQ);
+  gr_song_init (&s);
+  s.tempo = 120;
+  d = gr_track_add (&s, TRK_DRUMS, "Drums", KIT_STUDIO);
+  k = gr_track_add (&s, TRK_INST, "Keys", PATCH_EPIANO);
+  p = gr_pattern_new (&s, "P", GR_BAR);
+  gr_pattern_add_note (&s.patterns[p], GR_PPQ, GR_PPQ, 60, 100);   /* beat 2, a crotchet */
+  gr_region_add (&s, k, 0, GR_BAR, p);
+  p = gr_pattern_new (&s, "D", GR_BAR);
+  gr_pattern_add_note (&s.patterns[p], 0, GR_PPQ / 4, DR_KICK, 120);
+  gr_region_add (&s, d, 0, GR_BAR, p);
+  s.tracks[k].midi_out = 1;
+  s.tracks[k].vol = 0.5f;
+  s.tracks[k].pan = 1.0f;
+  s.tracks[d].mute = 1;         /* (to hear only the MIDI out track: nothing) */
+
+  e = gr_engine_new (&s);
+  mo_n = 0;
+  gr_engine_set_midi_out (e, mo_capture, NULL);
+  gr_play (e);
+  peak = 0;
+  for (i = 0; i < GR_RATE; i += 256)
+    {
+      float l[256], r[256];
+      int j;
+      gr_render (e, l, r, 256);
+      for (j = 0; j < 256; j++)
+          if (fabsf (l[j]) > peak) peak = fabsf (l[j]);
+    }
+  /* Keys: the first instrument track, so channel 1 (index 0). */
+  CHECK (mo_find (0x020000C0u | (unsigned) gr_patch_program (PATCH_EPIANO) << 8, 0xFFFFFFFF) >= 0,
+         "MIDI out: the track's program goes out (Groove's sound's nearest GM program), as a 2-byte command");
+  CHECK (mo_find (0x030000B0u | 7 << 8 | 64 << 16, 0xFFFFFFFF) >= 0, "and its volume (CC7, 0.5 -> 64)");
+  CHECK (mo_find (0x030000B0u | 10 << 8 | 127 << 16, 0xFFFFFFFF) >= 0, "and its pan (CC10, right -> 127)");
+  on = mo_find (0x03000090u | 60 << 8 | 100 << 16, 0xFFFFFFFF);
+  off = mo_find (0x80 | 60 << 8, 0xFFFF);
+  CHECK (on >= 0 && fabs (mo_log[on].frame - GR_PPQ * spt) <= 64,
+         "the note goes out stamped with when it's heard (beat 2 at 120 bpm: half a second in)");
+  CHECK (off > on && fabs ((double) (mo_log[off].frame - mo_log[on].frame) - GR_PPQ * spt) <= 64,
+         "and its note-off a crotchet later");
+  CHECK (mo_find (0x99, 0xFF) < 0, "a drum track without MIDI out sends nothing");
+  CHECK (peak < 0.01f, "a MIDI out track makes no sound of its own in Groove");
+  mo_n = 0;
+  gr_live_on (e, k, 64, 90);
+  gr_live_off (e, k, 64);
+  CHECK (mo_n == 2 && mo_log[0].frame == 0 && mo_log[0].cmd == (0x03000090u | 64 << 8 | 90 << 16)
+         && mo_log[1].frame == 0 && (mo_log[1].cmd & 0xFFFF) == (0x80u | 64 << 8),
+         "notes played live go out straight away (frame 0)");
+  /* Drums out: channel 10, GM keys. */
+  s.tracks[d].mute = 0;
+  s.tracks[d].midi_out = 1;
+  mo_n = 0;
+  gr_live_on (e, d, DR_SNARE, 100);
+  CHECK (mo_find (0x99 | (unsigned) gr_gm_drum_note (DR_SNARE) << 8, 0xFFFF) >= 0,
+         "drum tracks play on channel 10 with General MIDI drum keys");
+  CHECK (mo_find (0xC9, 0xFF) >= 0, "with a kit program sent first");
+  mo_n = 0;
+  gr_stop (e);
+  CHECK (mo_find (0xB0 | 123 << 8, 0xFFFF) >= 0 && mo_find (0xB9 | 123 << 8, 0xFFFF) >= 0,
+         "stopping sends All Notes Off on the channels used");
+  /* Mute: the channel's volume goes to 0 and no notes go out. */
+  s.tracks[k].mute = 1;
+  mo_n = 0;
+  gr_locate (e, 0);
+  gr_play (e);
+  render_peak (e, GR_RATE);
+  CHECK (mo_find (0xB0 | 7 << 8, 0xFFFFFF) >= 0 && mo_find (0x90, 0xFF) < 0,
+         "a muted MIDI out track sends volume 0 and no notes");
+  gr_stop (e);
+  s.tracks[k].mute = 0;
+  gr_engine_set_midi_out (e, NULL, NULL);
+  gr_locate (e, 0);
+  gr_play (e);
+  render_peak (e, GR_RATE / 4);
+  peak = render_peak (e, GR_RATE / 2);
+  CHECK (peak > 0.02f, "without a sender (bouncing a WAV, say), a MIDI out track plays Groove's sound");
+  gr_engine_free (e);
+  CHECK (gr_song_save (&s, "/tmp/groove_mo.txt") == 0 && gr_song_load (&b, "/tmp/groove_mo.txt") == 0
+         && b.tracks[k].midi_out == 1 && b.tracks[d].midi_out == 1 && b.tracks[k].gm == -1,
+         "MIDI out is saved in the song");
+  gr_song_free (&b);
+  gr_song_free (&s);
+}
+
 static void test_sixteen (const char *sf)
 {
   static gr_song s, b;
@@ -1249,6 +1362,7 @@ int main (int argc, char **argv)
   test_midi ();
   test_gm_fallback ();
   test_sixteen (getenv ("GROOVE_TEST_SOUNDFONT"));
+  test_midi_out ();
   if (getenv ("GROOVE_TEST_SOUNDFONT") && *getenv ("GROOVE_TEST_SOUNDFONT"))
     test_gm_play (getenv ("GROOVE_TEST_SOUNDFONT"));
   else
