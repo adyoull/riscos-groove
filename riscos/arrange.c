@@ -75,10 +75,16 @@ int arrange_create (void)
   return app.w_main < 0 || app.w_tool < 0;
 }
 
+const char *arrange_window_title (void) { return title; }
+
 void arrange_title (void)
 {
   const char *leaf = app.path[0] ? app.path : "<Untitled>";
-  snprintf (title, sizeof title, "%s%s", leaf, app.unsaved ? " *" : "");
+  /* With MIDI out on, where it goes ("MIDI out: Support"); else just the name. */
+  if (midiout_on ())
+    snprintf (title, sizeof title, "%.200s%s   MIDI out: %s", leaf, app.unsaved ? " *" : "", midiout_name ());
+  else
+    snprintf (title, sizeof title, "%.200s%s", leaf, app.unsaved ? " *" : "");
   if (app.main_open)
     {
       /* Redraw just the title bar: ForceRedraw with the window's outline. */
@@ -698,6 +704,13 @@ void arrange_tool_redraw (int *b)
 }
 
 static void redraw_tool_button (int i);
+void arrange_output_changed (void)
+{
+  arrange_title ();
+  if (app.main_open)
+    app_redraw_all (app.w_main);  /* (the track headers say "MIDI out") */
+}
+
 void arrange_midi_light (void)
 {
   if (app.main_open)

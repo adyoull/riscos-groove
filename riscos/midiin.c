@@ -73,10 +73,10 @@ int midiin_present (void)
 }
 
 /* Register with MIDI Support, if it's there and we haven't. MIDI Support
-   shows the version in hundredths (22: "0:22", for 0.2.2) and the date as
+   shows the version in hundredths (23: "0:23", for 0.2.3) and the date as
    given, so it's given the way the other drivers give theirs ("2 Nov 2026"
    rather than "02-Nov-2026"). */
-#define MS_VERSION 22
+#define MS_VERSION 23
 static void ms_register (void)
 {
   int n = -1, h = 0;
@@ -105,9 +105,7 @@ void midiin_forget_module (void)
   ms_register ();
   if (!chosen && port != MIDI_OFF)
     port = ms_handle ? MIDI_SUPPORT : MIDI_ANY;
-  if (!out_chosen)
-    out_port = ms_handle ? MIDI_SUPPORT : midiin_present () ? 0 : MIDI_OFF;
-  out_update ();
+  out_update ();                /* (MIDI out starts Off: F10 or the menu choose) */
 }
 
 /* On quitting (atexit): leave MIDI Support, so "Groove" goes from its map. */
@@ -438,4 +436,43 @@ void midiout_set_port (int p)
     gr_engine_set_midi_out (app.eng, on ? sender : NULL, NULL);
     out_set = on;
   }
+}
+
+/* ---- Cycling through the choices (F10) ------------------------------------ */
+
+const char *midiout_name (void)
+{
+  static const char *const ports[4] = { "Port 1", "Port 2", "Port 3", "Port 4" };
+  if (out_port == MIDI_SUPPORT)
+    return "Support";
+  if (out_port >= 0 && out_port < 4)
+    return ports[out_port];
+  return "Off";
+}
+
+void midiout_cycle (void)
+{
+  int order[6] = { MIDI_OFF, MIDI_SUPPORT, 0, 1, 2, 3 }, i, k, at = 0;
+  present = -1;                 /* (MIDI Support or a module may have come since) */
+  ms_register ();
+  midiin_present ();
+  if (!ms_handle && present <= 0)
+    {
+      app_error ("There's nothing to send MIDI to. Load Pete Everett's MIDI Support "
+                 "(!MidiSupp) or a MIDI module such as USBMIDI, then try again.");
+      return;
+    }
+  for (i = 0; i < 6; i++)
+    if (order[i] == out_port)
+      at = i;
+  for (k = 1; k <= 6; k++)
+    {
+      int p = order[(at + k) % 6];
+      if (p == MIDI_OFF || (p == MIDI_SUPPORT && ms_handle) || (p >= 0 && present > 0))
+        {
+          midiout_set_port (p);
+          break;
+        }
+    }
+  arrange_output_changed ();
 }

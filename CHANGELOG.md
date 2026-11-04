@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.3 (4 Nov 2026)
+
+- F10 steps through the MIDI out choices: Off, MIDI Support, Port 1-4
+  and round again, skipping any that aren't there. Suggested by
+  Jean-Michel Brück.
+- The song window's title shows where MIDI out goes ("MIDI out:
+  Support"); with MIDI out Off it's just the song's name.
+- Song > Play on MIDI out (Shift-F11): every drum and instrument track on
+  MIDI out at once, or all off. Track > Play on MIDI out is now F11.
+- MIDI out now starts Off. Ticking Play on MIDI out on a track while it's
+  Off picks MIDI Support, else Port 1.
+
 ## 0.2.2 (2 Nov 2026)
 
 - MIDI keyboard: a MIDI keyboard plays the selected track like musical

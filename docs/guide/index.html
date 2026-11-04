@@ -52,7 +52,7 @@ a { color:#1f5fa8; }
 <h1>Groove User Guide</h1>
 <p>Making music on RISC OS</p>
 <p>Start here if you've never made music on a computer before. If you have, the Technical Stuff boxes and Chapter 19 are for you.</p>
-<span class="badge">Groove 0.2.2</span>
+<span class="badge">Groove 0.2.3</span>
 </div>
 </header>
 <main>
@@ -87,7 +87,7 @@ a { color:#1f5fa8; }
 <p>The pictures are screenshots of Groove running on RISC OS 5.</p>
 
 <h4>This is an early version</h4>
-<p>Groove 0.2.2 is an early version. It's still being tested, so you may come across bugs. If you change something by mistake, <kbd>Ctrl</kbd>+<kbd>Z</kbd> (Undo) takes it back (<a href="#ch3">Chapter 3</a>), but save your song now and then as well (<a href="#ch13">Chapter 13</a>).</p>
+<p>Groove 0.2.3 is an early version. It's still being tested, so you may come across bugs. If you change something by mistake, <kbd>Ctrl</kbd>+<kbd>Z</kbd> (Undo) takes it back (<a href="#ch3">Chapter 3</a>), but save your song now and then as well (<a href="#ch13">Chapter 13</a>).</p>
 
 <h4>What we assume you know</h4>
 <p>Not much. You should know the three mouse buttons (<b>Select</b> on the left, <b>Menu</b> in the middle, <b>Adjust</b> on the right), and how to drag a file from a Filer window into a program. You don't need to know anything about music.</p>
@@ -142,7 +142,7 @@ a { color:#1f5fa8; }
 
 <h4>Installing</h4>
 <ol class="steps">
-<li>Unzip <code>Groove-0.2.2.zip</code> with SparkFS or PackMan's unzip, so the files keep their RISC OS file types.</li>
+<li>Unzip <code>Groove-0.2.3.zip</code> with SparkFS or PackMan's unzip, so the files keep their RISC OS file types.</li>
 <li>Drag <b>!Groove</b> to wherever you keep your applications, for example your <code>Apps</code> directory.</li>
 <li>If you want SoundFont sounds, install <b>!SoftMIDI</b> as well, and open the directory it's in once, so the Filer sees it.</li>
 </ol>
@@ -475,13 +475,15 @@ a { color:#1f5fa8; }
 <div class="box tech"><b class="label">TECHNICAL STUFF</b>The SoundFont is played by SoftMIDI's library inside Groove. Each instrument track has a MIDI channel of its own. All drum tracks share MIDI channel 10, the only one that plays kits, so if two drum tracks use SoundFont kits, they use the first one's kit and pan. That leaves 15 channels for instruments: a song of 16 instrument tracks with SoundFont sounds needs a second SoundFont player for the last one, which Groove loads when it's first needed (it takes the SoundFont's size in memory again; until then that track plays Groove's own nearest sound). Up to 48 SoundFont notes can sound at once.</div>
 
 <h4>Playing on a MIDI instrument: MIDI out</h4>
-<p>A track can be played by a MIDI instrument instead of by Groove: a keyboard or sound module on a USB or MIDI cable, or a software synth such as Pete Everett's MidiSynth. Select the track and choose <b>Track &rarr; Play on MIDI out</b>. The track's header then says <b>MIDI out</b>, and its notes, its sound (as a General MIDI program), its volume and its pan are sent to the instrument; muting the track turns it down there.</p>
-<figure><img src="images/midi-out-track.png" alt="A track on MIDI out"><figcaption>The Electric Piano track playing on MIDI out.</figcaption></figure>
-<p>Where it's sent is chosen with <b>MIDI out</b> in the main menu:</p>
+<p>A track can be played by a MIDI instrument instead of by Groove: a keyboard or sound module on a USB or MIDI cable, or a software synth such as Pete Everett's MidiSynth. Select the track and choose <b>Track &rarr; Play on MIDI out</b>, or press <kbd>F11</kbd>; do the same again to turn it off. The track's header then says <b>MIDI out</b> (once MIDI out has somewhere to send), and its notes, its sound (as a General MIDI program), its volume and its pan are sent to the instrument; muting the track turns it down there.</p>
+<figure><img src="images/midi-out-track.png" alt="A track on MIDI out"><figcaption>The Electric Piano track playing on MIDI out, through MIDI Support (see the title).</figcaption></figure>
+<p>To send the whole song, choose <b>Song &rarr; Play on MIDI out</b>, or press <kbd>Shift</kbd>+<kbd>F11</kbd>: every drum and instrument track goes on MIDI out (audio tracks always play in Groove). It's ticked when they all are; choose it again, or press <kbd>Shift</kbd>+<kbd>F11</kbd> again, to turn them all off.</p>
+<figure><img src="images/song-menu.png" alt="Song, Play on MIDI out"><figcaption>Song &rarr; Play on MIDI out: the whole song on the MIDI instrument.</figcaption></figure>
+<p>Where it's sent is chosen with <b>MIDI out</b> in the main menu, or with <kbd>F10</kbd>, which moves on to the next choice each time you press it (Off, MIDI Support, Port 1 to Port 4, and round again; choices that aren't there are skipped). While MIDI out is on, the song window's title says where it goes, for example <b>MIDI out: Support</b>; when it's Off, the title is just the song's name.</p>
 <ul>
-<li><b>MIDI Support</b>: from Groove's <b>Groove</b> driver to whatever you connect it to in the MIDI Manager, or with <code>*MIDIConnect Groove MIDISynth</code> (or a port name: <code>*MIDIMap</code> lists them). Groove starts with this when MIDI Support is loaded.</li>
+<li><b>MIDI Support</b>: from Groove's <b>Groove</b> driver to whatever you connect it to in the MIDI Manager, or with <code>*MIDIConnect Groove MIDISynth</code> (or a port name: <code>*MIDIMap</code> lists them).</li>
 <li><b>Port 1</b> to <b>Port 4</b>: straight to a MIDI module's port, such as USBMIDI's.</li>
-<li><b>Off</b>: nothing is sent, and MIDI out tracks play Groove's own sound (or their SoundFont sound) instead. The same happens when there's nowhere to send to.</li>
+<li><b>Off</b>: nothing is sent, and MIDI out tracks play Groove's own sound (or their SoundFont sound) instead. MIDI out starts Off; turning <b>Play on MIDI out</b> on for a track or the song while it's Off picks the first choice that's there (MIDI Support, else Port 1).</li>
 </ul>
 <figure><img src="images/midi-out-menu.png" alt="The MIDI out menu"><figcaption>Menu &gt; MIDI out, with MIDI Support loaded.</figcaption></figure>
 <p>Notes you play live go out at once. Notes from the song go out when Groove's own sound from the same moment reaches your speakers, so the instrument plays in time with the rest of the song.</p>
@@ -556,6 +558,8 @@ a { color:#1f5fa8; }
 <tr><td><kbd>Z</kbd> <kbd>X</kbd></td><td>Octave down / up</td></tr>
 <tr><td><kbd>Delete</kbd></td><td>Delete the selected region</td></tr>
 <tr><td><kbd>F7</kbd> <kbd>F8</kbd> <kbd>F9</kbd></td><td>Loops, Editor, Keyboard</td></tr>
+<tr><td><kbd>F10</kbd></td><td>MIDI out: Off, MIDI Support, Port 1 to 4, in turn</td></tr>
+<tr><td><kbd>F11</kbd> / <kbd>Shift</kbd>+<kbd>F11</kbd></td><td>Play on MIDI out: the selected track / the whole song</td></tr>
 <tr><td><kbd>Ctrl</kbd>+<kbd>S</kbd></td><td>Save</td></tr>
 <tr><td><kbd>Ctrl</kbd>+<kbd>Z</kbd></td><td>Undo (<kbd>Ctrl</kbd>+<kbd>Y</kbd> redoes)</td></tr>
 </table>
@@ -605,6 +609,9 @@ a { color:#1f5fa8; }
 <tr><td><kbd>Z</kbd> / <kbd>X</kbd></td><td>Octave down / up</td></tr>
 <tr><td><kbd>C</kbd> / <kbd>V</kbd></td><td>Velocity down / up</td></tr>
 <tr><td><kbd>F7</kbd> / <kbd>F8</kbd> / <kbd>F9</kbd></td><td>Loops / Editor / Keyboard window</td></tr>
+<tr><td><kbd>F10</kbd></td><td>The next MIDI out choice: Off, MIDI Support, Port 1 to Port 4, and round again (the song window's title shows it)</td></tr>
+<tr><td><kbd>F11</kbd></td><td>Play on MIDI out for the selected track, on or off</td></tr>
+<tr><td><kbd>Shift</kbd>+<kbd>F11</kbd></td><td>Play on MIDI out for every drum and instrument track, on or off</td></tr>
 <tr><td><kbd>Ctrl</kbd>+<kbd>S</kbd></td><td>Save</td></tr>
 <tr><td><kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Ctrl</kbd>+<kbd>Y</kbd></td><td>Undo / Redo</td></tr>
 <tr><td><kbd>Ctrl</kbd>+<kbd>C</kbd> / <kbd>Ctrl</kbd>+<kbd>V</kbd></td><td>Copy the selected region / paste it at the playhead</td></tr>
@@ -646,12 +653,12 @@ a { color:#1f5fa8; }
 <figure><img src="images/main-menu.png" alt="The main menu with the Track submenu"><figcaption>The main menu with its Track submenu.</figcaption></figure>
 <table>
 <tr><th>Menu</th><th>Items</th></tr>
-<tr><td>Song</td><td>New; Save...; Export as WAV...; Export as MIDI...; Key &rarr; (the 12 keys); Time signature &rarr; (2/4 to 12/8, from the playhead's bar); Import WAV, MIDI, Maestro: drag in (a reminder)</td></tr>
-<tr><td>Track</td><td>New drummer track; New instrument track; New audio track; Sound &rarr;; Rename &rarr;; Delete track; Play on MIDI out</td></tr>
+<tr><td>Song</td><td>New; Save...; Export as WAV...; Export as MIDI...; Key &rarr; (the 12 keys); Time signature &rarr; (2/4 to 12/8, from the playhead's bar); Play on MIDI out (every track; <kbd>Shift</kbd>+<kbd>F11</kbd>); Import WAV, MIDI, Maestro: drag in (a reminder)</td></tr>
+<tr><td>Track</td><td>New drummer track; New instrument track; New audio track; Sound &rarr;; Rename &rarr;; Delete track; Play on MIDI out (<kbd>F11</kbd>)</td></tr>
 <tr><td>Region</td><td>Edit; Duplicate; Delete; Split at playhead (<kbd>Ctrl</kbd>+<kbd>T</kbd>); Copy (<kbd>Ctrl</kbd>+<kbd>C</kbd>); Paste (<kbd>Ctrl</kbd>+<kbd>V</kbd>)</td></tr>
 <tr><td>Loop browser, Editor, Musical typing</td><td>Open those windows (<kbd>F7</kbd>, <kbd>F8</kbd>, <kbd>F9</kbd>)</td></tr>
 <tr><td>MIDI keyboard</td><td>Off; MIDI Support; Any port; Port 1 to Port 4: where Groove listens for a MIDI keyboard</td></tr>
-<tr><td>MIDI out</td><td>Off; MIDI Support; Port 1 to Port 4: where tracks on MIDI out are sent</td></tr>
+<tr><td>MIDI out (<kbd>F10</kbd>)</td><td>Off; MIDI Support; Port 1 to Port 4: where tracks on MIDI out are sent</td></tr>
 <tr><td>Cycle, Metronome, Count-in, Merge recordings, Follow playhead</td><td>Turn each on or off (ticked when on). Count-in and Follow playhead start on.</td></tr>
 <tr><td>Undo, Redo</td><td>Take back the last change, or put it back (<kbd>Ctrl</kbd>+<kbd>Z</kbd>, <kbd>Ctrl</kbd>+<kbd>Y</kbd>)</td></tr>
 </table>

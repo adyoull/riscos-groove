@@ -1332,8 +1332,8 @@ int fake_script (int *b, int *reason)
       app_main_menu (100, 900);          /* (building the menu registers) */
       CHECK (midiin_support () && !strcmp (fake.ms_name, "Groove") && fake.ms_flags == (1 | 2 | 4 | 8),
              "with MIDI Support there, Groove registers as a driver called Groove (sends and receives, queued, whole messages)");
-      CHECK (fake.ms_version == 22 && fake.ms_date[0] != '0' && !strchr (fake.ms_date, '-'),
-             "it gives MIDI Support its version in hundredths (22, shown as 0:22) and a date like the others' (2 Nov 2026)");
+      CHECK (fake.ms_version == 23 && fake.ms_date[0] != '0' && !strchr (fake.ms_date, '-'),
+             "it gives MIDI Support its version in hundredths (23, shown as 0:23) and a date like the others' (4 Nov 2026)");
       *reason = 9;
       return 1;
     case 156:
@@ -1353,8 +1353,7 @@ int fake_script (int *b, int *reason)
     case 158:
       CHECK (midiin_held () == 0, "and end");
       /* ---- MIDI out ---- */
-      CHECK (midiout_port () == MIDI_SUPPORT && midiout_on (),
-             "MIDI out goes to MIDI Support to begin with, when it's there");
+      CHECK (midiout_port () == MIDI_OFF, "MIDI out starts Off");
       app.sel_track = 1;
       app.song.tracks[1].type = TRK_INST;
       fake.ms_nsent = 0;
@@ -1363,7 +1362,8 @@ int fake_script (int *b, int *reason)
       *reason = 9;
       return 1;
     case 159:
-      CHECK (app.song.tracks[1].midi_out == 1, "Track > Play on MIDI out ticks the track");
+      CHECK (app.song.tracks[1].midi_out == 1 && midiout_port () == MIDI_SUPPORT,
+             "Track > Play on MIDI out ticks the track, and with MIDI out Off picks MIDI Support");
       fake.ms_q[fake.ms_n++] = 0x90 | 62 << 8 | 80 << 16 | 3 << 24;   /* a key from the keyboard */
       *reason = 0;
       return 1;
@@ -1455,6 +1455,89 @@ int fake_script (int *b, int *reason)
       gr_live_off (app.eng, 1, 69);
       CHECK (fake.midi_ntx == 0 && fake.ms_nsent == 0 && gr_busy (app.eng),
              "with MIDI out off, a MIDI out track plays Groove's own sound");
+      /* ---- F10: cycle through the MIDI out choices ---- */
+      key (b, reason, app.w_main, 0x1CA);
+      return 1;
+    case 166:
+      CHECK (midiout_port () == MIDI_SUPPORT && midiout_on () && !strcmp (midiout_name (), "Support"),
+             "F10 from Off: MIDI out > MIDI Support");
+      key (b, reason, app.w_main, 0x1CA);
+      return 1;
+    case 167:
+      CHECK (midiout_port () == 0, "F10 again: Port 1");
+      CHECK (strstr (arrange_window_title (), "MIDI out: Port 1") != NULL,
+             "the song window's title says where MIDI out goes");
+      key (b, reason, app.w_main, 0x1CA);
+      return 1;
+    case 168:
+      CHECK (midiout_port () == 1 && !strcmp (midiout_name (), "Port 2"), "Port 2");
+      midiout_cycle ();
+      midiout_cycle ();
+      CHECK (midiout_port () == 3, "on to Port 4");
+      midiout_cycle ();
+      CHECK (midiout_port () == MIDI_OFF && !midiout_on (), "and round to Off");
+      CHECK (!strstr (arrange_window_title (), "MIDI"), "with MIDI out off, the title is just the song's name");
+      return 1;
+    case 169:
+      fake.midi_present = 0;               /* no MIDI module: its ports are skipped */
+      midiout_cycle ();
+      CHECK (midiout_port () == MIDI_SUPPORT, "without a MIDI module, F10 goes Off, MIDI Support...");
+      midiout_cycle ();
+      CHECK (midiout_port () == MIDI_OFF, "... and straight back to Off");
+      fake.midi_present = 1;
+      *reason = 0;
+      return 1;
+    case 170:
+      /* ---- F11 / Shift-F11: Play on MIDI out for the track / the song ---- */
+      {
+        int t;
+        for (t = 0; t < app.song.ntracks; t++)
+          app.song.tracks[t].midi_out = 0;
+      }
+      app.sel_track = 0;
+      key (b, reason, app.w_main, 0x1CB);
+      return 1;
+    case 171:
+      CHECK (app.song.tracks[0].midi_out == 1 && midiout_on (),
+             "F11: the selected track on MIDI out (MIDI out was Off: it picks the first there)");
+      key (b, reason, app.w_main, 0x1CB);
+      return 1;
+    case 172:
+      CHECK (app.song.tracks[0].midi_out == 0, "F11 again: off");
+      key (b, reason, app.w_main, 0x1DB);
+      return 1;
+    case 173:
+      {
+        int t, all = 1;
+        for (t = 0; t < app.song.ntracks; t++)
+          if (app.song.tracks[t].type != TRK_AUDIO && !app.song.tracks[t].midi_out) all = 0;
+          else if (app.song.tracks[t].type == TRK_AUDIO && app.song.tracks[t].midi_out) all = 0;
+        CHECK (all, "Shift-F11: every drum and instrument track on MIDI out (audio tracks not)");
+      }
+      b[0] = 0; b[1] = 6; b[2] = -1;     /* Song > Play on MIDI out */
+      app_main_menu (100, 900);
+      *reason = 9;
+      return 1;
+    case 174:
+      {
+        int t, any = 0;
+        for (t = 0; t < app.song.ntracks; t++)
+          any |= app.song.tracks[t].midi_out;
+        CHECK (!any, "Song > Play on MIDI out, with them all on: all off");
+      }
+      app.song.tracks[1].midi_out = 1;   /* one on: Song ticks the rest */
+      app_song_midi_out ();
+      {
+        int t, all = 1;
+        for (t = 0; t < app.song.ntracks; t++)
+          if (app.song.tracks[t].type != TRK_AUDIO && !app.song.tracks[t].midi_out) all = 0;
+        CHECK (all, "with only some on, it puts them all on");
+      }
+      app_song_midi_out ();
+      *reason = 0;
+      return 1;
+    case 175:
+    case 176:
       mark_saved ();
       *reason = 0;
       return 1;
@@ -1478,7 +1561,7 @@ int main (void)
   test_workspace ();
   rc = groove_main ();
   CHECK (rc == 0, "Groove exits cleanly");
-  CHECK (step == 167, "the whole script ran");
+  CHECK (step == 178, "the whole script ran");
   CHECK (fake.ms_removed == 7, "on quitting, Groove leaves MIDI Support (RemoveDriver)");
   CHECK (fake.closed_down && fake.ring == NULL, "on quit: SharedSound handler removed, Wimp_CloseDown");
   CHECK (fake.errors == 4, "four error boxes in all (two quit questions, no web browser, load question)");

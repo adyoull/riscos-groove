@@ -18,8 +18,8 @@
 #include "layout.h"
 
 #define APP_NAME     "Groove"
-#define APP_VERSION  "0.2.2"
-#define APP_DATE     "02-Nov-2026"
+#define APP_VERSION  "0.2.3"
+#define APP_DATE     "04-Nov-2026"
 #define TASK_WORD    0x4B534154
 
 #define FILETYPE_SONG  0xFFF       /* Text, until a type is allocated */
@@ -184,7 +184,15 @@ int  midiout_on (void);            /* somewhere to send, so MIDI out tracks use 
 int  midiout_pending (void);       /* commands waiting for their sound to be heard */
 void midiout_poll (void);          /* send what is due */
 void midiout_reset (void);         /* notes off, and resend each channel's settings */
+/* F10: the next MIDI out choice that's there (Off, MIDI Support,
+   Port 1-4, round again). The song window's title shows it. */
+void midiout_cycle (void);
+void app_track_midi_out (void);    /* F11: the selected track on MIDI out, or not */
+void app_song_midi_out (void);     /* Shift-F11: every drum and instrument track */
+const char *midiout_name (void);   /* "Off", "Support", "Port 1".. */
 void arrange_midi_light (void);    /* redraw the display's MIDI light */
+const char *arrange_window_title (void);
+void arrange_output_changed (void); /* the title ("MIDI out: ...") and track headers */
 
 /* savebox.c */
 int  savebox_create (void);

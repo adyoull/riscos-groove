@@ -220,7 +220,7 @@ enum { MENU_NONE, MENU_ICONBAR, MENU_MAIN, MENU_SOUND };
 static int open_menu = MENU_NONE, menu_x, menu_y;
 static int m_iconbar[MENU_WORDS (7)];
 static int m_midi[MENU_WORDS (7)], m_midiout[MENU_WORDS (6)];
-static int m_main[MENU_WORDS (15)], m_song[MENU_WORDS (7)], m_key[MENU_WORDS (12)];
+static int m_main[MENU_WORDS (15)], m_song[MENU_WORDS (8)], m_key[MENU_WORDS (12)];
 /* Song > Time signature: from the bar the playhead is in. */
 static const int meters[][2] = { { 2, 4 }, { 3, 4 }, { 4, 4 }, { 5, 4 }, { 6, 8 }, { 7, 8 }, { 9, 8 }, { 12, 8 } };
 #define NMETERS ((int) (sizeof meters / sizeof meters[0]))
@@ -355,6 +355,63 @@ void app_sound_menu (int x, int y)
   app_check (_swix (Wimp_CreateMenu, _INR (1, 3), m_sound, menu_x, menu_y));
 }
 
+/* Play on MIDI out: drum and instrument tracks can be; audio tracks can't. */
+static int song_has_notes_tracks (void)
+{
+  int t;
+  for (t = 0; t < app.song.ntracks; t++)
+    if (app.song.tracks[t].type != TRK_AUDIO)
+      return 1;
+  return 0;
+}
+
+/* Song > Play on MIDI out is ticked when every drum and instrument track is. */
+static int song_midi_out (void)
+{
+  int t;
+  for (t = 0; t < app.song.ntracks; t++)
+    if (app.song.tracks[t].type != TRK_AUDIO && !app.song.tracks[t].midi_out)
+      return 0;
+  return song_has_notes_tracks ();
+}
+
+static void midi_out_changed (void)
+{
+  int t;
+  for (t = 0; t < app.song.ntracks; t++)
+    if (app.song.tracks[t].midi_out && app.song.tracks[t].type != TRK_AUDIO)
+      break;
+  if (t < app.song.ntracks && !midiout_on ())
+    midiout_cycle ();           /* (somewhere to send it: the first that's there) */
+  app_changed ();
+}
+
+/* Track > Play on MIDI out (F11): the selected track, on or off. */
+void app_track_midi_out (void)
+{
+  int t = app.sel_track;
+  if (t < 0 || t >= app.song.ntracks || app.song.tracks[t].type == TRK_AUDIO)
+    return;
+  midiout_reset ();             /* (notes off, and the channels set up again) */
+  app.song.tracks[t].midi_out = !app.song.tracks[t].midi_out;
+  midi_out_changed ();
+}
+
+/* Song > Play on MIDI out (Shift-F11): every drum and instrument track on,
+   or, if they all are, all off. */
+void app_song_midi_out (void)
+{
+  int t, on;
+  if (!song_has_notes_tracks ())
+    return;
+  on = !song_midi_out ();
+  midiout_reset ();
+  for (t = 0; t < app.song.ntracks; t++)
+    if (app.song.tracks[t].type != TRK_AUDIO)
+      app.song.tracks[t].midi_out = on;
+  midi_out_changed ();
+}
+
 static void build_main_menu (void)
 {
   menu_builder b;
@@ -384,6 +441,7 @@ static void build_main_menu (void)
   menu_add (&b, "Export as MIDI...", MI_DOTTED, NULL, 0);
   menu_add (&b, "Key", 0, m_key, 0);
   menu_add (&b, "Time signature", MI_DOTTED, m_meter, 0);
+  menu_add (&b, "Play on MIDI out  \x8B" "F11", (song_midi_out () ? MI_TICK : 0) | MI_DOTTED, NULL, !song_has_notes_tracks ());
   menu_add (&b, "Import WAV, MIDI, Maestro: drag in", 0, NULL, 1);
   menu_end (&b);
 
@@ -405,7 +463,7 @@ static void build_main_menu (void)
   menu_add (&b, "Sound", 0, m_sound, !has_t || app.song.tracks[t].type == TRK_AUDIO);
   menu_add (&b, "Rename", MI_DOTTED, m_rename, !has_t);
   menu_add (&b, "Delete track", MI_DOTTED, NULL, !has_t);
-  menu_add (&b, "Play on MIDI out", has_t && app.song.tracks[t].midi_out ? MI_TICK : 0, NULL,
+  menu_add (&b, "Play on MIDI out  F11", has_t && app.song.tracks[t].midi_out ? MI_TICK : 0, NULL,
             !has_t || app.song.tracks[t].type == TRK_AUDIO);
   menu_end (&b);
 
@@ -452,7 +510,7 @@ static void build_main_menu (void)
   menu_add (&b, "Musical typing  F9", 0, NULL, 0);
   menu_add (&b, midiin_present () || midiin_support () ? "MIDI keyboard" : "MIDI keyboard (needs MIDI)",
             0, m_midi, 0);
-  menu_add (&b, "MIDI out", MI_DOTTED, m_midiout, 0);
+  menu_add (&b, "MIDI out      F10", MI_DOTTED, m_midiout, 0);
   menu_add (&b, "Cycle", app.song.loop_on ? MI_TICK : 0, NULL, 0);
   menu_add (&b, "Metronome", app.song.metronome ? MI_TICK : 0, NULL, 0);
   menu_add (&b, "Count-in", app.count_in ? MI_TICK : 0, NULL, 0);
@@ -617,6 +675,8 @@ static void menu_selection (int *sel)
             app.song.key = sel[2];
             app_changed ();
           }
+        else if (sel[1] == 6)
+          app_song_midi_out ();
         else if (sel[1] == 5 && sel[2] >= 0 && sel[2] < NMETERS)
           {
             /* From the bar the playhead is in (bar 1 at the start). */
@@ -654,12 +714,8 @@ static void menu_selection (int *sel)
             editor_show (-1);
             app_changed ();
           }
-        else if (sel[1] == 6 && t >= 0 && t < app.song.ntracks && app.song.tracks[t].type != TRK_AUDIO)
-          {
-            midiout_reset ();     /* (notes off, and the channels set up again) */
-            app.song.tracks[t].midi_out = !app.song.tracks[t].midi_out;
-            app_changed ();
-          }
+        else if (sel[1] == 6)
+          app_track_midi_out ();
         break;
       case 2:                     /* Region */
         if (app.sel_region >= 0 && app.song.regions[app.sel_region].used)
@@ -711,7 +767,10 @@ static void menu_selection (int *sel)
         {
           static const int ports[6] = { MIDI_OFF, MIDI_SUPPORT, 0, 1, 2, 3 };
           if (sel[1] == 0 || (sel[1] == 1 && midiin_support ()) || (sel[1] > 1 && sel[1] < 6 && midiin_present ()))
-            midiout_set_port (ports[sel[1]]);
+            {
+              midiout_set_port (ports[sel[1]]);
+              arrange_output_changed ();
+            }
         }
         break;
       case 8: app.song.loop_on = !app.song.loop_on; app_changed (); break;
@@ -916,6 +975,9 @@ static void key (int *b)
     case 0x187: browser_open (); return;          /* F7 */
     case 0x188: editor_open (); return;           /* F8 */
     case 0x189: keys_open (); return;             /* F9 */
+    case 0x1CA: midiout_cycle (); return;         /* F10 (&1CA: F10-F12 are &1CA-&1CC): the next MIDI out */
+    case 0x1CB: app_track_midi_out (); return;    /* F11: the selected track on MIDI out, or not */
+    case 0x1DB: app_song_midi_out (); return;     /* Shift-F11: every track */
     case 0x13: savebox_open (FILETYPE_SONG); return;   /* Ctrl-S */
     case 0x1A: app_undo (0); return;                    /* Ctrl-Z */
     case 0x19: app_undo (1); return;                    /* Ctrl-Y */

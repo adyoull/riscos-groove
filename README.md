@@ -10,7 +10,7 @@ can also use a SoundFont's 128 General MIDI instruments and drum kits.
 
 ![Groove: three loops in a song, with the loop browser](docs/guide/images/loops-dropped.png)
 
-**Status: 0.2.2, an early version.** Tested on a Raspberry Pi 4 with RISC OS
+**Status: 0.2.3, an early version.** Tested on a Raspberry Pi 4 with RISC OS
 5.31, and in RISC OS 5.31-5 under emulation on Linux.
 
 ## What it does
@@ -26,7 +26,9 @@ can also use a SoundFont's 128 General MIDI instruments and drum kits.
   module's ports (Rick Murray and Dave Hinton's USBMIDI).
 - **MIDI out**: any track can be played by a MIDI instrument instead (a
   keyboard or sound module on USB or a MIDI cable, or a software synth),
-  through MIDI Support or a MIDI module's port, in time with the song.
+  through MIDI Support or a MIDI module's port, in time with the song;
+  F10 steps through the MIDI out choices, shown in the window's title;
+  F11 sends the selected track, Shift-F11 the whole song.
 - **Recording**: a bar of count-in, then what you play goes into a region,
   tidied to the nearest sixteenth; or merged into the region already there.
 - **Arranging**: move, stretch, split, copy and paste regions; up to 16
@@ -89,7 +91,7 @@ keyboard:
 
 ## Installing
 
-1. Download `Groove-0.2.2.zip` from the release page and unzip it with SparkFS
+1. Download `Groove-0.2.3.zip` from the release page and unzip it with SparkFS
    or PackMan's unzip, so the files keep their RISC OS file types.
 2. Copy `!Groove` to wherever you keep your applications.
 3. For SoundFont sounds, install **SoftMIDI** from PackMan, and open the

@@ -1,4 +1,4 @@
-Groove 0.2.2 for RISC OS
+Groove 0.2.3 for RISC OS
 ============================
 
 A music studio: drag loops into a song, play instruments
@@ -61,13 +61,19 @@ MIDI keyboard
   when notes come in.
 
 MIDI out
-  Track > Play on MIDI out: the track is played by a MIDI instrument (a
-  keyboard or module on USB or a MIDI cable, or a software synth like
-  MidiSynth) instead of by Groove: its notes, sound, volume and pan.
+  Track > Play on MIDI out (F11): the track is played by a MIDI
+  instrument (a keyboard or module on USB or a MIDI cable, or a software
+  synth like MidiSynth) instead of by Groove: its notes, sound, volume
+  and pan.
+  Song > Play on MIDI out (Shift-F11) does every drum and instrument
+  track at once.
   Menu > MIDI out chooses where: MIDI Support (connect "Groove" to the
   instrument in the MIDI Manager, or *MIDIConnect Groove <name>), a MIDI
   module's port, or Off (Groove plays those tracks itself). Song notes go
   out in time with Groove's own sound; stopping sends All Notes Off.
+  F10 steps through the MIDI out choices (Off, MIDI Support, Port 1-4);
+  the song window's title shows where MIDI out goes ("MIDI out: Support"),
+  and is just the song's name when it's Off.
 
 Recording
   R counts in a bar first (Count-in in the main menu turns this off).
