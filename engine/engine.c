@@ -203,7 +203,9 @@ struct gr_engine
   void *mo_ctx;
   unsigned frames;
   int mo_live;                  /* sending for gr_live_on/off: now */
-  int mo_prog[16], mo_vol[16], mo_pan[16];
+  int mo_reset, gm_reset;       /* reset controllers (CC 121) before the next sync */
+  int chase;                    /* the song has just started: controllers in force */
+  int mo_prog[16], mo_vol[16], mo_pan[16], mo_bank[16];
   unsigned mo_used;
   struct { int ch, key, left; } mo_off[GM_PENDING];
   int mo_noffs;
@@ -408,10 +410,10 @@ static void drum_on (gr_engine *e, int track, int kit, int sound, int vel)
   float most = -1.0f;
   drum_voice *d;
   /* Hi-hats choke each other, like a real pedal. */
-  if (sound == DR_CHAT || sound == DR_OHAT)
+  if (sound == GV_CHAT || sound == GV_OHAT)
     for (i = 0; i < NDRUM; i++)
       if (e->dv[i].active && e->dv[i].track == track
-          && (e->dv[i].sound == DR_OHAT || e->dv[i].sound == DR_CHAT))
+          && (e->dv[i].sound == GV_OHAT || e->dv[i].sound == GV_CHAT))
         e->dv[i].len = e->dv[i].len < 64 ? e->dv[i].len : 64;
   for (i = 0; i < NDRUM; i++)
     {
@@ -427,12 +429,12 @@ static void drum_on (gr_engine *e, int track, int kit, int sound, int vel)
   d->vel = vel / 127.0f;
   switch (sound)
     {
-    case DR_KICK:  d->len = kit == KIT_ELECTRO ? GR_RATE : GR_RATE / 2; break;
-    case DR_SNARE: d->len = GR_RATE / 4; break;
-    case DR_CHAT:  d->len = GR_RATE / 16; break;
-    case DR_OHAT:  d->len = GR_RATE / 2; break;
-    case DR_CLAP:  d->len = GR_RATE / 3; break;
-    case DR_LTOM: case DR_HTOM: d->len = GR_RATE / 2; break;
+    case GV_KICK:  d->len = kit == KIT_ELECTRO ? GR_RATE : GR_RATE / 2; break;
+    case GV_SNARE: d->len = GR_RATE / 4; break;
+    case GV_CHAT:  d->len = GR_RATE / 16; break;
+    case GV_OHAT:  d->len = GR_RATE / 2; break;
+    case GV_CLAP:  d->len = GR_RATE / 3; break;
+    case GV_LTOM: case GV_HTOM: d->len = GR_RATE / 2; break;
     default:       d->len = GR_RATE / 5; break;
     }
 }
@@ -549,7 +551,7 @@ static int drum_render (drum_voice *d, float *out, int n)
         }
       switch (d->sound)
         {
-        case DR_KICK:
+        case GV_KICK:
           {
             /* Sine with a fast falling pitch; the electro kick is the long
                booming 808 kind. */
@@ -560,13 +562,13 @@ static int drum_render (drum_voice *d, float *out, int n)
             if (t < 0.002f) s += noise () * 0.3f * (1.0f - t / 0.002f);   /* click */
           }
           break;
-        case DR_SNARE:
+        case GV_SNARE:
           d->ph = wrap1 (d->ph + (electro ? 238.0f : 190.0f) / GR_RATE);
           d->lp += 0.45f * (noise () - d->lp);
           s = 0.5f * fsin (d->ph) * expf (-t * 30.0f) + 0.75f * (noise () - d->lp * 0.6f) * expf (-t * (electro ? 22.0f : 16.0f));
           break;
-        case DR_CHAT:
-        case DR_OHAT:
+        case GV_CHAT:
+        case GV_OHAT:
           {
             /* High-passed noise plus a cluster of square waves for metal. */
             float x = noise () * 0.6f;
@@ -575,10 +577,10 @@ static int drum_render (drum_voice *d, float *out, int n)
             x += 0.25f * ((d->ph < 0.5f) - (d->ph2 < 0.5f));
             d->hp_out = 0.7f * (d->hp_out + x - d->hp_prev);
             d->hp_prev = x;
-            s = d->hp_out * expf (-t * (d->sound == DR_CHAT ? 60.0f : 7.0f)) * 0.7f;
+            s = d->hp_out * expf (-t * (d->sound == GV_CHAT ? 60.0f : 7.0f)) * 0.7f;
           }
           break;
-        case DR_CLAP:
+        case GV_CLAP:
           {
             /* Three quick bursts then a tail: the classic clap trick. */
             float tt = t < 0.03f ? fmodf (t, 0.01f) : t - 0.02f;
@@ -586,10 +588,10 @@ static int drum_render (drum_voice *d, float *out, int n)
             s = (noise () - d->lp) * expf (-tt * (t < 0.03f ? 250.0f : 18.0f)) * 0.8f;
           }
           break;
-        case DR_LTOM:
-        case DR_HTOM:
+        case GV_LTOM:
+        case GV_HTOM:
           {
-            float base = d->sound == DR_LTOM ? 95.0f : 150.0f;
+            float base = d->sound == GV_LTOM ? 95.0f : 150.0f;
             d->ph = wrap1 (d->ph + (base + base * 0.6f * expf (-t * 20.0f)) / GR_RATE);
             s = fsin (d->ph) * expf (-t * 7.0f) * 0.8f;
           }
@@ -663,6 +665,18 @@ static void gm_sync (gr_engine *e, int solo)
       e->gm_noffs = 0;
       e->gm_gen = gm_generation ();
     }
+  if (e->gm_reset)
+    {
+      /* The song starting: each channel's controllers reset and its
+         program, volume and pan sent again. */
+      for (ch = 0; ch < GM_CHANNELS; ch++)
+        {
+          if (gm_synth_for (ch) && e->gm_prog[ch] >= 0)
+            midisynth_control (gm_synth_for (ch), ch & 15, 121, 0);
+          e->gm_prog[ch] = e->gm_vol[ch] = e->gm_pan[ch] = -1;
+        }
+      e->gm_reset = 0;
+    }
   for (ch = 0; ch < GM_CHANNELS; ch++)
     prog[ch] = vol[ch] = pan[ch] = -1;
   for (t = 0; t < s->ntracks; t++)
@@ -727,7 +741,7 @@ static void gm_note_on (gr_engine *e, int track, int pitch, int vel, int len_sam
   ch = gm_channel (s, track);
   if (ch == 9)
     {
-      key = gr_gm_drum_note (pitch % GR_DRUM_SOUNDS);
+      key = pitch & 127;
       vel = (int) (vel * tr->vol / 0.8f + 0.5f);   /* 0.8 is a new track's volume */
       if (vel > 127) vel = 127;
       if (vel < 1) return;
@@ -805,16 +819,31 @@ static int out_track (const gr_engine *e, int track)
   return t->midi_out && t->type != TRK_AUDIO;
 }
 
-/* (A 16th instrument track has no channel of its own: it shares the last.) */
-static int mo_channel (const gr_song *s, int track)
+/* A track's own channel, or: drums 10, instrument tracks in order on the
+   rest (from the 16th they share the last). */
+int gr_track_channel (const gr_song *s, int track)
 {
-  int ch = gm_channel (s, track);
+  int ch;
+  if (s->tracks[track].channel >= 0 && s->tracks[track].channel < 16)
+    return s->tracks[track].channel;
+  ch = gm_channel (s, track);
   return ch > 15 ? 15 : ch;
 }
 
+int gr_track_program (const gr_track *tr)
+{
+  if (tr->program >= 0 && tr->program < 128)
+    return tr->program;
+  if (tr->type == TRK_DRUMS)
+    return tr->gm >= 0 ? tr->gm : tr->patch == KIT_ELECTRO ? GM_KIT_808 : GM_KIT_STANDARD;
+  return tr->gm >= 0 ? tr->gm : gr_patch_program (tr->patch);
+}
+
+#define mo_channel gr_track_channel
+
 static void mo_send (gr_engine *e, int status, int d1, int d2)
 {
-  int len = (status & 0xF0) == 0xC0 ? 2 : 3;
+  int len = (status & 0xF0) == 0xC0 || (status & 0xF0) == 0xD0 ? 2 : 3;
   e->mo_used |= 1u << (status & 15);
   e->mo_fn (e->mo_ctx, e->mo_live ? 0 : e->frames,
             (unsigned) status | (unsigned) (d1 & 127) << 8 | (unsigned) (d2 & 127) << 16 | (unsigned) len << 24);
@@ -826,7 +855,7 @@ static void mo_send (gr_engine *e, int status, int d1, int d2)
 static void mo_sync (gr_engine *e)
 {
   gr_song *s = e->song;
-  int prog[16], vol[16], pan[16], t, ch, live, solo = any_solo (s);
+  int prog[16], vol[16], pan[16], bank[16], t, ch, live, solo = any_solo (s);
   for (ch = 0; ch < 16; ch++)
     prog[ch] = -1;
   for (t = 0; t < s->ntracks; t++)
@@ -839,10 +868,9 @@ static void mo_sync (gr_engine *e)
       on = gm_audible (s, t, solo);
       if (prog[ch] >= 0 && (vol[ch] > 0 || !on))
         continue;               /* (the first drum track that can be heard) */
-      if (tr->type == TRK_DRUMS)
-        prog[ch] = tr->gm >= 0 ? tr->gm : tr->patch == KIT_ELECTRO ? GM_KIT_808 : GM_KIT_STANDARD;
-      else
-        prog[ch] = tr->gm >= 0 ? tr->gm : gr_patch_program (tr->patch);
+      prog[ch] = gr_track_program (tr);
+      /* (each half + 1, 0 when the track doesn't set it) */
+      bank[ch] = (tr->bank_msb >= 0 ? tr->bank_msb + 1 : 0) << 8 | (tr->bank_lsb >= 0 ? tr->bank_lsb + 1 : 0);
       vol[ch] = !on ? 0 : ch == 9 ? 127 : (int) (tr->vol * 127.0f + 0.5f);
       pan[ch] = (int) ((tr->pan + 1.0f) * 63.5f);
       if (vol[ch] > 127) vol[ch] = 127;
@@ -857,13 +885,24 @@ static void mo_sync (gr_engine *e)
     {
       if (prog[ch] < 0)
         continue;
-      if (prog[ch] != e->mo_prog[ch])
-        mo_send (e, 0xC0 | ch, prog[ch], 0);
+      if (e->mo_reset)
+        mo_send (e, 0xB0 | ch, 121, 0);   /* Reset All Controllers (not volume or pan) */
+      if (prog[ch] != e->mo_prog[ch] || bank[ch] != e->mo_bank[ch])
+        {
+          /* Bank Select first (only the halves the track sets), then the program. */
+          if (bank[ch] >> 8)
+            mo_send (e, 0xB0 | ch, 0, (bank[ch] >> 8) - 1);
+          if (bank[ch] & 0xFF)
+            mo_send (e, 0xB0 | ch, 32, (bank[ch] & 0xFF) - 1);
+          mo_send (e, 0xC0 | ch, prog[ch], 0);
+        }
       if (vol[ch] != e->mo_vol[ch])
         mo_send (e, 0xB0 | ch, 7, vol[ch]);
       if (pan[ch] != e->mo_pan[ch])
         mo_send (e, 0xB0 | ch, 10, pan[ch]);
       e->mo_prog[ch] = prog[ch];
+      e->mo_bank[ch] = bank[ch];
+      e->mo_reset = 0;
       e->mo_vol[ch] = vol[ch];
       e->mo_pan[ch] = pan[ch];
     }
@@ -886,7 +925,7 @@ static void mo_note_on (gr_engine *e, int track, int pitch, int vel, int len_sam
   mo_sync (e);
   if (tr->type == TRK_DRUMS)
     {
-      key = gr_gm_drum_note (pitch % GR_DRUM_SOUNDS);
+      key = pitch & 127;
       vel = (int) (vel * tr->vol / 0.8f + 0.5f);   /* (drum tracks share a channel) */
       if (vel > 127) vel = 127;
       if (vel < 1) return;
@@ -951,7 +990,7 @@ void gr_midi_out_reset (gr_engine *e)
   mo_all_off (e);
   e->mo_live = 0;
   for (ch = 0; ch < 16; ch++)
-    e->mo_prog[ch] = e->mo_vol[ch] = e->mo_pan[ch] = -1;
+    e->mo_prog[ch] = e->mo_vol[ch] = e->mo_pan[ch] = e->mo_bank[ch] = -2;
 }
 
 void gr_engine_set_midi_out (gr_engine *e, gr_midi_sender *fn, void *ctx)
@@ -975,10 +1014,23 @@ static double samples_per_tick (const gr_song *s)
   return GR_RATE * 60.0 / ((double) s->tempo * GR_PPQ);
 }
 
+/* Each time the song starts, every MIDI out channel's settings are sent
+   again (the instrument may have been reset or changed since). */
+static void mo_forget (gr_engine *e)
+{
+  int ch;
+  for (ch = 0; ch < 16; ch++)
+    e->mo_prog[ch] = e->mo_vol[ch] = e->mo_pan[ch] = e->mo_bank[ch] = -2;
+  /* And controllers: reset, then whatever the song has in force here. */
+  e->mo_reset = e->gm_reset = 1;
+  e->chase = 1;
+}
+
 void gr_play (gr_engine *e)
 {
   if (e->playing)
     return;
+  mo_forget (e);
   e->playing = 1;
   e->play_from = e->pos;
   e->last_tick = (int) e->pos - 1;
@@ -1247,7 +1299,7 @@ void gr_live_on (gr_engine *e, int track, int pitch, int vel)
   if (out_track (e, track))
     {
       e->mo_live = 1;
-      mo_note_on (e, track, s->tracks[track].type == TRK_DRUMS ? pitch % GR_DRUM_SOUNDS : pitch, vel, -1);
+      mo_note_on (e, track, pitch, vel, -1);
       e->mo_live = 0;
     }
   if (s->tracks[track].type == TRK_DRUMS)
@@ -1255,13 +1307,13 @@ void gr_live_on (gr_engine *e, int track, int pitch, int vel)
       if (out_track (e, track))
         ;
       else if (gm_track (e, track))
-        gm_note_on (e, track, pitch % GR_DRUM_SOUNDS, vel, -1);
+        gm_note_on (e, track, pitch & 127, vel, -1);
       else
-        drum_on (e, track, s->tracks[track].patch, pitch % GR_DRUM_SOUNDS, vel);
+        drum_on (e, track, s->tracks[track].patch, gr_drum_voice (pitch), vel);
       if (e->recording && e->rec_region[track] >= 0)
         {
-          rec_note_on (e, track, pitch % GR_DRUM_SOUNDS);
-          rec_note_off (e, track, pitch % GR_DRUM_SOUNDS, vel);
+          rec_note_on (e, track, pitch & 127);
+          rec_note_off (e, track, pitch & 127, vel);
         }
     }
   else if (s->tracks[track].type == TRK_INST)
@@ -1332,6 +1384,76 @@ static int any_solo (const gr_song *s)
 }
 
 /* Fire every note that starts at integer tick `tick` of the song. */
+/* A controller event: on MIDI out, or the SoundFont; Groove's own sounds
+   take no notice. */
+static void ctl_fire (gr_engine *e, int track, int type, int v, int solo)
+{
+  gr_song *s = e->song;
+  if (!gm_audible (s, track, solo))
+    return;                     /* (a muted track's volume stays down) */
+  if (out_track (e, track))
+    {
+      int ch = mo_channel (s, track);
+      mo_sync (e);
+      if (type < 128)
+        mo_send (e, 0xB0 | ch, type, v);
+      else if (type == GR_CTL_PROGRAM)
+        {
+          mo_send (e, 0xC0 | ch, v, 0);   /* (mo_prog stays the track's own) */
+        }
+      else if (type == GR_CTL_BEND)
+        mo_send (e, 0xE0 | ch, (v + 8192) & 127, (v + 8192) >> 7);
+      else if (type == GR_CTL_PRESSURE)
+        mo_send (e, 0xD0 | ch, v, 0);
+    }
+  else if (gm_track (e, track))
+    {
+      int ch = gm_channel (s, track);
+      midisynth *ms = gm_synth_for (ch);
+      if (!ms)
+        return;
+      if (type < 128)
+        midisynth_control (ms, ch & 15, type, v);
+      else if (type == GR_CTL_PROGRAM)
+        {
+          midisynth_program (ms, ch & 15, v);   /* (gm_prog stays the track's own) */
+        }
+      else if (type == GR_CTL_BEND)
+        midisynth_pitch_bend (ms, ch & 15, v + 8192);
+      else if (type == GR_CTL_PRESSURE)
+        midisynth_send (ms, 0xD0 | (ch & 15), v, 0);
+    }
+}
+
+/* The song has started at tick: each part playing there gets the
+   controllers in force at that point (the last of each type before it). */
+static void chase (gr_engine *e, int tick)
+{
+  gr_song *s = e->song;
+  int i, k, solo = any_solo (s);
+  for (i = 0; i < GR_MAX_REGIONS; i++)
+    {
+      const gr_region *r = &s->regions[i];
+      const gr_pattern *p;
+      int local;
+      if (!r->used || r->clip >= 0 || r->pattern < 0 || tick < r->start || tick >= r->start + r->len)
+        continue;
+      p = &s->patterns[r->pattern];
+      if (!p->nctls)
+        continue;
+      local = (tick - r->start) % p->len;
+      for (k = 0; k < p->nctls && p->ctls[k].tick < local; k++)
+        {
+          int j, later = 0;
+          for (j = k + 1; j < p->nctls && p->ctls[j].tick < local; j++)
+            if (p->ctls[j].type == p->ctls[k].type)
+              later = 1;
+          if (!later)
+            ctl_fire (e, r->track, p->ctls[k].type, p->ctls[k].value, solo);
+        }
+    }
+}
+
 static void fire_tick (gr_engine *e, int tick)
 {
   gr_song *s = e->song;
@@ -1350,6 +1472,11 @@ static void fire_tick (gr_engine *e, int tick)
       tr = &s->tracks[r->track];
       p = &s->patterns[r->pattern];
       local = (tick - r->start) % p->len;   /* regions loop their pattern */
+      /* Controllers before notes: a program change takes effect on the
+         note that starts with it. */
+      for (k = 0; k < p->nctls && p->ctls[k].tick <= local; k++)
+        if (p->ctls[k].tick == local)
+          ctl_fire (e, r->track, p->ctls[k].type, p->ctls[k].value, solo);
       for (k = 0; k < p->nnotes && p->notes[k].tick <= local; k++)
         {
           const gr_note *n = &p->notes[k];
@@ -1375,7 +1502,7 @@ static void fire_tick (gr_engine *e, int tick)
                           tr->type == TRK_DRUMS ? -1 : (int) (len * spt));
             }
           else if (tr->type == TRK_DRUMS)
-            drum_on (e, r->track, tr->patch, n->pitch % GR_DRUM_SOUNDS, n->vel);
+            drum_on (e, r->track, tr->patch, gr_drum_voice (n->pitch), n->vel);
           else
             {
               /* Cut the note at the end of the region. */
@@ -1412,7 +1539,7 @@ static void preview_tick (gr_engine *e, double spt)
         if (p->notes[k].tick == t)
           {
             if (e->pv_type == TRK_DRUMS)
-              drum_on (e, LIVE_TRACK, e->pv_patch, p->notes[k].pitch % GR_DRUM_SOUNDS, p->notes[k].vel);
+              drum_on (e, LIVE_TRACK, e->pv_patch, gr_drum_voice (p->notes[k].pitch), p->notes[k].vel);
             else
               synth_on (e, LIVE_TRACK, e->pv_patch, p->notes[k].pitch, p->notes[k].vel,
                         (int) (p->notes[k].len * spt));
@@ -1507,6 +1634,16 @@ static void render_sub (gr_engine *e, float *l, float *r, int n)
   if (e->playing)
     {
       int now = (int) e->pos;
+      if (e->chase)
+        {
+          /* Just started: settings first, then the controllers in force. */
+          if (gm_synth ())
+            gm_sync (e, solo);
+          if (e->mo_fn)
+            mo_sync (e);
+          chase (e, e->last_tick + 1);
+          e->chase = 0;
+        }
       while (e->last_tick < now)
         fire_tick (e, ++e->last_tick);
     }
@@ -1548,9 +1685,9 @@ static void render_sub (gr_engine *e, float *l, float *r, int n)
       drum_render (d, tmp, n);
       e->busy_tail = GR_RATE * 2;
       /* Spread the kit a little, as if heard from the drummer's stool. */
-      if (d->sound == DR_CHAT || d->sound == DR_OHAT) pan = 0.25f;
-      else if (d->sound == DR_HTOM) pan = -0.2f;
-      else if (d->sound == DR_LTOM) pan = 0.2f;
+      if (d->sound == GV_CHAT || d->sound == GV_OHAT) pan = 0.25f;
+      else if (d->sound == GV_HTOM) pan = -0.2f;
+      else if (d->sound == GV_LTOM) pan = 0.2f;
       if (d->track >= 0)
         {
           gr_track *tr = &s->tracks[d->track];

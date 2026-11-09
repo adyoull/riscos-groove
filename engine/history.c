@@ -101,6 +101,8 @@ static int take (const gr_song *s, snap *out)
         put_int (&b, p->len);
         put_int (&b, p->nnotes);
         put (&b, p->notes, (size_t) p->nnotes * sizeof p->notes[0]);
+        put_int (&b, p->nctls);
+        put (&b, p->ctls, (size_t) p->nctls * sizeof p->ctls[0]);
       }
   put_int (&b, -1);
   for (i = 0; i < GR_MAX_CLIPS; i++)
@@ -173,6 +175,10 @@ static void give (const snap *sn, gr_song *s)
       if (p->nnotes < 0 || p->nnotes > GR_MAX_NOTES)
         p->nnotes = 0;
       get (&r, p->notes, (size_t) p->nnotes * sizeof p->notes[0]);
+      p->nctls = get_int (&r);
+      if (p->nctls < 0 || p->nctls > GR_MAX_CTLS)
+        p->nctls = 0;
+      get (&r, p->ctls, (size_t) p->nctls * sizeof p->ctls[0]);
     }
   for (i = 0; i < GR_MAX_CLIPS; i++)
     s->clips[i].used = 0;

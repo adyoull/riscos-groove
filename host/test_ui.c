@@ -27,6 +27,7 @@ static void mark_saved (void)
   app.unsaved = 0;
 }
 
+static int drum_test_region;
 static int midi_before, undo_regions, undo_region, undo_start;
 static int ed_region, ed_tick0, ed_pitch0, ed_regions, ed_end, ren_regions;
 static char ren_name0, ren_names[3][GR_NAME];
@@ -69,6 +70,16 @@ static void key (int *b, int *reason, int win, int code)
 {
   b[0] = win; b[1] = -1; b[6] = code;
   *reason = 8;
+}
+
+/* The work-area y in the editor's controller lane (pinned to the visible
+   bottom) for a value 0..127 there. */
+static int lane_y_for (int v)
+{
+  fake_window *w = fake_win (app.w_edit);
+  int bottom = w->scroll[1] - (w->vis[3] - w->vis[1]);
+  int y0 = bottom + 12, y1 = bottom + ED_LANE_H - ED_LANE_BAR - 8;
+  return y0 + (y1 - y0) * v / 127 + 1;
 }
 
 static void tool_click (int *b, int *reason, int button, int buttons)
@@ -1060,6 +1071,16 @@ int fake_script (int *b, int *reason)
       return 1;
     case 126:
       CHECK (editor_selected () == ed_before.nnotes - 1, "Shift-click takes a note out of the selection");
+      {
+        /* A selected note that goes (Undo, say) leaves the selection. */
+        gr_pattern *p = &app.song.patterns[app.song.regions[ed_region].pattern];
+        int k = 1, pitch, n = editor_selected ();
+        pitch = p->notes[k].pitch;
+        p->notes[k].pitch = 0;
+        app_changed ();
+        CHECK (editor_selected () == n - 1, "a selected note that's gone leaves the selection");
+        p->notes[k].pitch = pitch;
+      }
       /* ---- regions: split at the playhead, copy, paste ---- */
       {
         gr_region *r = &app.song.regions[ed_region];
@@ -1318,7 +1339,7 @@ int fake_script (int *b, int *reason)
       *reason = 0;
       return 1;
     case 154:
-      CHECK (midiin_held () == 1 && gr_drum_row_for_key (38) == 1, "on a drum track, a drum key plays its drum");
+      CHECK (midiin_held () == 1 && gr_drum_voice (38) == GV_SNARE, "on a drum track, a drum key plays its drum");
       b[0] = 6; b[1] = 0; b[2] = -1;     /* MIDI keyboard > Off */
       app_main_menu (100, 900);
       *reason = 9;
@@ -1332,8 +1353,8 @@ int fake_script (int *b, int *reason)
       app_main_menu (100, 900);          /* (building the menu registers) */
       CHECK (midiin_support () && !strcmp (fake.ms_name, "Groove") && fake.ms_flags == (1 | 2 | 4 | 8),
              "with MIDI Support there, Groove registers as a driver called Groove (sends and receives, queued, whole messages)");
-      CHECK (fake.ms_version == 23 && fake.ms_date[0] != '0' && !strchr (fake.ms_date, '-'),
-             "it gives MIDI Support its version in hundredths (23, shown as 0:23) and a date like the others' (4 Nov 2026)");
+      CHECK (fake.ms_version == 30 && fake.ms_date[0] != '0' && !strchr (fake.ms_date, '-'),
+             "it gives MIDI Support its version in hundredths (30, shown as 0:30) and a date like the others' (7 Nov 2026)");
       *reason = 9;
       return 1;
     case 156:
@@ -1537,7 +1558,106 @@ int fake_script (int *b, int *reason)
       *reason = 0;
       return 1;
     case 175:
+      /* ---- the step grid: all 128 drum keys ---- */
+      {
+        int t = gr_track_add (&app.song, TRK_DRUMS, "Keys test", KIT_STUDIO);
+        int p = gr_pattern_new (&app.song, "Grid", GR_BAR);
+        drum_test_region = gr_region_add (&app.song, t, 0, GR_BAR, p);
+        app_changed ();
+        editor_open ();
+        editor_show (drum_test_region);
+        CHECK (lay_drum_rows == GR_DRUM_SOUNDS, "the step grid starts with the kit's eight rows");
+      }
+      click (b, reason, app.w_edit, 1260, -20, BUT_SELECT);    /* "All keys" */
+      return 1;
     case 176:
+      release (reason);
+      CHECK (editor_all_keys_on () && lay_drum_rows == 128 && lay_drum_h == ED_DRUM_ALL_H,
+             "the editor's All keys button shows all 128 drum keys");
+      {
+        int sw = lay_step_w (app.edit_width, GR_BAR);
+        click (b, reason, app.w_edit, ED_LABEL_W + 2 * sw + sw / 2, -ED_HEAD_H - 40 * ED_DRUM_ALL_H - 10, BUT_SELECT);
+      }
+      return 1;
+    case 177:
+      release (reason);
+      {
+        gr_pattern *p = &app.song.patterns[app.song.regions[drum_test_region].pattern];
+        CHECK (p->nnotes == 1 && p->notes[0].pitch == 40 && p->notes[0].tick == 2 * GR_STEP,
+               "clicking key 40's row puts an electric snare (40) in the step");
+      }
+      click (b, reason, app.w_edit, 1260, -20, BUT_SELECT);    /* "Kit rows" */
+      return 1;
+    case 178:
+      release (reason);
+      CHECK (!editor_all_keys_on () && lay_drum_rows == GR_DRUM_SOUNDS + 1,
+             "Kit rows: the eight, and a row for each other key in use (40)");
+      *reason = 0;
+      return 1;
+    case 179:
+      /* ---- the controller lane ---- */
+      editor_set_lane (1);
+      click (b, reason, app.w_edit, ED_LABEL_W + 4, lane_y_for (64), BUT_SELECT);
+      return 1;
+    case 180:
+      release (reason);
+      {
+        gr_pattern *p = &app.song.patterns[app.song.regions[drum_test_region].pattern];
+        CHECK (p->nctls == 1 && p->ctls[0].type == 1 && p->ctls[0].tick == 0
+               && p->ctls[0].value > 58 && p->ctls[0].value < 70,
+               "a click in the controller lane puts a Modulation event there, at the height's value");
+      }
+      {
+        int sw = lay_step_w (app.edit_width, GR_BAR);
+        click (b, reason, app.w_edit, ED_LABEL_W + 4 * sw + 2, lane_y_for (10), BUT_SELECT);
+      }
+      return 1;
+    case 181:                     /* drag along, rising */
+      {
+        int sw = lay_step_w (app.edit_width, GR_BAR);
+        point (app.w_edit, ED_LABEL_W + 8 * sw + 2, lane_y_for (120), BUT_SELECT);
+      }
+      *reason = 0;
+      return 1;
+    case 182:
+      release (reason);
+      {
+        gr_pattern *p = &app.song.patterns[app.song.regions[drum_test_region].pattern];
+        int k, n = 0, rising = 1, last = -1;
+        for (k = 0; k < p->nctls; k++)
+          if (p->ctls[k].tick >= 4 * GR_STEP)
+            {
+              n++;
+              if (p->ctls[k].value < last) rising = 0;
+              last = p->ctls[k].value;
+            }
+        CHECK (n == 9 && rising && last > 110, "dragging draws an event every 1/32 note, rising with the line");
+      }
+      {
+        int sw = lay_step_w (app.edit_width, GR_BAR);
+        click (b, reason, app.w_edit, ED_LABEL_W + sw / 4, lane_y_for (64), BUT_ADJUST);
+      }
+      return 1;
+    case 183:
+      release (reason);
+      {
+        gr_pattern *p = &app.song.patterns[app.song.regions[drum_test_region].pattern];
+        CHECK (gr_pattern_find_ctl (p, 0, 1) < 0 && p->nctls == 9, "Adjust erases one");
+      }
+      click (b, reason, app.w_edit, 100, lane_y_for (0) + ED_LANE_H - ED_LANE_BAR + 10, BUT_SELECT);
+      return 1;
+    case 184:
+      release (reason);
+      b[0] = 10; b[1] = -1;         /* the lane's menu: Pitch bend */
+      *reason = 9;
+      return 1;
+    case 185:
+      CHECK (editor_lane_type () == GR_CTL_BEND && editor_lane_count (1) == 9,
+             "the lane's button opens a menu of controllers: Pitch bend");
+      *reason = 0;
+      return 1;
+    case 186:
+    case 187:
       mark_saved ();
       *reason = 0;
       return 1;
@@ -1561,7 +1681,7 @@ int main (void)
   test_workspace ();
   rc = groove_main ();
   CHECK (rc == 0, "Groove exits cleanly");
-  CHECK (step == 178, "the whole script ran");
+  CHECK (step == 189, "the whole script ran");
   CHECK (fake.ms_removed == 7, "on quitting, Groove leaves MIDI Support (RemoveDriver)");
   CHECK (fake.closed_down && fake.ring == NULL, "on quit: SharedSound handler removed, Wimp_CloseDown");
   CHECK (fake.errors == 4, "four error boxes in all (two quit questions, no web browser, load question)");

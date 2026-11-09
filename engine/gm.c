@@ -84,8 +84,8 @@ int gr_gm_need_second (const gr_song *s)
 {
   int t, k = 0;
   for (t = 0; t < s->ntracks; t++)
-    if (s->tracks[t].type == TRK_INST && k++ == 15 && s->tracks[t].gm >= 0)
-      return 1;               /* the 16th instrument track (see gm_channel) */
+    if (s->tracks[t].type == TRK_INST && k++ >= 15 && s->tracks[t].gm >= 0)
+      return 1;               /* the 16th instrument track on (see gm_channel) */
   return 0;
 }
 
@@ -94,7 +94,9 @@ int gr_gm_second_ready (void) { return synth2 != NULL; }
 const char *gr_gm_error (void) { return error; }
 
 struct midisynth *gm_synth (void) { return synth; }
-struct midisynth *gm_synth_n (int n) { return n ? synth2 : synth; }
+/* (Channels from 32 on, for a 31st instrument track, have no synth: such a
+   track plays Groove's own sound.) */
+struct midisynth *gm_synth_n (int n) { return n == 0 ? synth : n == 1 ? synth2 : NULL; }
 unsigned gm_generation (void) { return generation; }
 
 void gm_restart (void)

@@ -388,7 +388,8 @@ static void draw_region_content (int ox, int x0, int y0, int x1, int y1,
               if (nx0 < x0) nx0 = x0;
               if (nx1 > x1) nx1 = x1;
               if (nx1 < nx0 + 4) nx1 = nx0 + 4;
-              ny = y0 + 4 + (int) ((long) (n->pitch - lo) * (h - 12) / (hi - lo));
+              ny = y0 + 4 + (int) ((long) ((tr->type == TRK_DRUMS ? gr_drum_voice (n->pitch) : n->pitch) - lo)
+                                   * (h - 12) / (hi - lo));
               gfx_rect (nx0, ny, nx1, ny + 4);
             }
         }

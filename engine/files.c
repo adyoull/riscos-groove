@@ -3,7 +3,7 @@
    A song is a short text file, so it survives being emailed, diffed and
    read by a person:
 
-     GROOVE 1
+     GROOVE 2                                    (1: before 0.3; its drum notes were 0..7)
      tempo 110
      key 0
      bars 16
@@ -13,8 +13,11 @@
      track 0 1 "Drums" 0.80 0.00 0.08 0 0 -1    type patch name vol pan reverb mute solo
                                                  sound (-1 Groove's, else SoundFont program/kit)
                                                  MIDI out (1: played on a MIDI device)
+                                                 channel bank-MSB bank-LSB program (-1: auto)
      pattern 3 "Boom Bap" 384                    index name length, then its notes:
-     n 0 24 0 120                                tick length pitch velocity
+     n 0 24 36 120                               tick length pitch velocity (drums: MIDI keys)
+     c 0 1 64                                    controller: tick type value (type 0-127
+                                                 a CC; 128 program, 129 bend, 130 pressure)
      end
      region 0 0 384 3 -1 0                       track start length pattern clip offset
      clip 0 "Recording" 44100                    index name rate
@@ -195,7 +198,7 @@ int gr_song_save (const gr_song *s, const char *path)
   int i, k;
   if (!f)
     return -1;
-  fprintf (f, "GROOVE 1\ntempo %d\nkey %d\nbars %d\nloop %d %d %d\nmetronome %d\nmaster %.2f\n",
+  fprintf (f, "GROOVE 2\ntempo %d\nkey %d\nbars %d\nloop %d %d %d\nmetronome %d\nmaster %.2f\n",
            s->tempo, s->key, s->bars, s->loop_on, s->loop_start, s->loop_end,
            s->metronome, s->master);
   /* Time signatures, from bar 0. (A plain 4/4 song has none: older
@@ -208,8 +211,8 @@ int gr_song_save (const gr_song *s, const char *path)
       const gr_track *t = &s->tracks[i];
       fprintf (f, "track %d %d ", (int) t->type, t->patch);
       put_name (f, t->name);
-      fprintf (f, " %.2f %.2f %.2f %d %d %d %d\n", t->vol, t->pan, t->reverb, t->mute, t->solo, t->gm,
-               t->midi_out != 0);
+      fprintf (f, " %.2f %.2f %.2f %d %d %d %d %d %d %d %d\n", t->vol, t->pan, t->reverb, t->mute, t->solo,
+               t->gm, t->midi_out != 0, t->channel, t->bank_msb, t->bank_lsb, t->program);
     }
   for (i = 0; i < GR_MAX_PATTERNS; i++)
     {
@@ -222,6 +225,8 @@ int gr_song_save (const gr_song *s, const char *path)
       for (k = 0; k < p->nnotes; k++)
         fprintf (f, "n %d %d %d %d\n", p->notes[k].tick, p->notes[k].len,
                  p->notes[k].pitch, p->notes[k].vel);
+      for (k = 0; k < p->nctls; k++)
+        fprintf (f, "c %d %d %d\n", p->ctls[k].tick, p->ctls[k].type, p->ctls[k].value);
       fprintf (f, "end\n");
     }
   for (i = 0; i < GR_MAX_CLIPS; i++)
@@ -272,6 +277,8 @@ int gr_song_load (gr_song *s, const char *path)
         {
           if (sscanf (line, "n %d %d %d %d", &a, &b, &c, &d) == 4)
             gr_pattern_add_note (cur, a, b, c, d);
+          else if (sscanf (line, "c %d %d %d", &a, &b, &c) == 3)
+            gr_pattern_set_ctl (cur, a, b, c);
           else if (!strncmp (line, "end", 3))
             cur = NULL;
           continue;
@@ -300,6 +307,16 @@ int gr_song_load (gr_song *s, const char *path)
                 s->tracks[t].gm = g;
               if (sscanf (rest, "%*f %*f %*f %*d %*d %*d %d", &g) == 1)   /* (from 0.2.2) */
                 s->tracks[t].midi_out = g != 0;
+              {
+                int ch, bm, bl, pr;                                       /* (from 0.3) */
+                if (sscanf (rest, "%*f %*f %*f %*d %*d %*d %*d %d %d %d %d", &ch, &bm, &bl, &pr) == 4)
+                  {
+                    s->tracks[t].channel = ch >= 0 && ch < 16 ? ch : -1;
+                    s->tracks[t].bank_msb = bm >= 0 && bm < 128 ? bm : -1;
+                    s->tracks[t].bank_lsb = bl >= 0 && bl < 128 ? bl : -1;
+                    s->tracks[t].program = pr >= 0 && pr < 128 ? pr : -1;
+                  }
+              }
             }
         }
       else if (sscanf (line, "pattern %d", &a) == 1 && a >= 0 && a < GR_MAX_PATTERNS)
@@ -350,6 +367,27 @@ int gr_song_load (gr_song *s, const char *path)
     {
       gr_song_init (s);
       return -1;
+    }
+  if (version < 2)
+    {
+      /* Before 0.3 a drum note was a row of the step grid, 0..7: each
+         drum track's patterns (once each) get the rows' MIDI keys. */
+      static unsigned char done[GR_MAX_PATTERNS];
+      int i, k;
+      memset (done, 0, sizeof done);
+      for (i = 0; i < GR_MAX_REGIONS; i++)
+        {
+          const gr_region *r = &s->regions[i];
+          gr_pattern *p;
+          if (!r->used || r->clip >= 0 || r->pattern < 0 || r->pattern >= GR_MAX_PATTERNS
+              || r->track < 0 || r->track >= s->ntracks || s->tracks[r->track].type != TRK_DRUMS
+              || done[r->pattern])
+            continue;
+          done[r->pattern] = 1;
+          p = &s->patterns[r->pattern];
+          for (k = 0; k < p->nnotes; k++)
+            p->notes[k].pitch = (uint8_t) gr_gm_drum_note (p->notes[k].pitch % GR_DRUM_SOUNDS);
+        }
     }
   if (s->bars < 4)
     s->bars = 4;

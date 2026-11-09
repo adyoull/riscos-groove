@@ -9,5 +9,5 @@ RMEnsure SharedUnixLibrary 1.16 Error Groove needs SharedUnixLibrary 1.16 or lat
 RMEnsure ARMEABISupport 0 IfThere System:Modules.ARMEABISupport Then RMLoad System:Modules.ARMEABISupport
 RMEnsure ARMEABISupport 0 Error Groove needs the ARMEABISupport module. Install it with PackMan.
 RMEnsure SharedSound 0 Error Groove needs the SharedSound module, which comes with RISC OS 5.
-WimpSlot -min 3072K -max 3072K
+WimpSlot -min 10240K -max 10240K
 Run <Groove$Dir>.!RunImage

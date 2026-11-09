@@ -1,4 +1,4 @@
-Groove 0.2.3 for RISC OS
+Groove 0.3 for RISC OS
 ============================
 
 A music studio: drag loops into a song, play instruments
@@ -22,7 +22,7 @@ The song window
   Tracks    M mute, S solo, R record-arm; volume and pan sliders. Drag a
             track's name up or down to move it. Track > Rename in the
             menu names it. Tracks are coloured by kind of instrument.
-            A song can have up to 16 tracks.
+            A song can have up to 32 tracks.
   Regions   drag to move, drag the right end to loop it longer; click to
             select (Delete removes it), double-click to edit. Double-click
             an empty track to make a new region. Ctrl-T splits the
@@ -60,6 +60,17 @@ MIDI keyboard
   to begin with, if it's loaded). The dot in the toolbar's display lights
   when notes come in.
 
+Editor (double-click a region)
+  Drums     a step grid. All keys shows all 128 MIDI drum keys with their
+            General MIDI names; Kit rows the kit's eight, plus any other
+            key the region uses.
+  Notes     a piano roll of all 128 MIDI notes.
+  Lane      the controller lane under the notes: its button chooses the
+            controller (modulation, volume, pan, sustain, any CC, pitch
+            bend, channel pressure, program change). Select puts an event
+            (drag to draw), Adjust rubs out. Controllers play on MIDI out
+            and SoundFont sounds, and go into MIDI files.
+
 MIDI out
   Track > Play on MIDI out (F11): the track is played by a MIDI
   instrument (a keyboard or module on USB or a MIDI cable, or a software
@@ -74,6 +85,8 @@ MIDI out
   F10 steps through the MIDI out choices (Off, MIDI Support, Port 1-4);
   the song window's title shows where MIDI out goes ("MIDI out: Support"),
   and is just the song's name when it's Off.
+  Track > MIDI channel (Auto, 1-16) and Track > Bank & program (Bank MSB,
+  Bank LSB, Program; empty for Groove's choice) set what's sent.
 
 Recording
   R counts in a bar first (Count-in in the main menu turns this off).

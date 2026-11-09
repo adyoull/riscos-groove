@@ -16,4 +16,14 @@ typedef struct { int start, end, key, vel; } gr_pnote;
    are counted in *dropped. */
 int gr_place_notes (gr_song *s, int t, const gr_pnote *m, int n, int from, int *full_at, int *dropped);
 
+/* A controller event (gr_ctl's type and value) in song ticks from the
+   import's start. */
+typedef struct { int tick, type, value; } gr_pctl;
+
+/* Put n controller events (sorted by tick) on track t after its notes:
+   each into the region playing at its time, or, where no region is (a
+   bend over a rest), a region made for its bars. Returns 0, or -1 when the
+   song is full; events that don't fit are counted in *dropped. */
+int gr_place_ctls (gr_song *s, int t, const gr_pctl *c, int n, int from, int *full_at, int *dropped);
+
 #endif

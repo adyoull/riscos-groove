@@ -141,6 +141,7 @@ void app_changed (void)
       arrange_sync_hscroll ();       /* the song's length (the scroll bar) and its picture */
       app_redraw_all (app.w_tool);   /* the tempo and key (a song loaded, a MIDI file's tempo) */
     }
+  editor_changed ();
   if (app.edit_open)
     app_redraw_all (app.w_edit);
   arrange_title ();
@@ -216,7 +217,12 @@ static void menu_end (menu_builder *b)
   b->m[4] = (b->maxlen + 2) * 16;   /* item width: system font is 16 units */
 }
 
-enum { MENU_NONE, MENU_ICONBAR, MENU_MAIN, MENU_SOUND };
+enum { MENU_NONE, MENU_ICONBAR, MENU_MAIN, MENU_SOUND, MENU_LANE };
+/* The controller lane's menu: the common controllers, and any CC by number. */
+static const int lane_types[] = { 1, 2, 7, 10, 11, 64, 71, 74, 91, 93, GR_CTL_BEND, GR_CTL_PRESSURE, GR_CTL_PROGRAM };
+#define NLANE ((int) (sizeof lane_types / sizeof lane_types[0]))
+static int m_lane[7 + 6 * (NLANE + 1)], m_lane_cc[7 + 6];
+static char lane_text[NLANE][40], lane_cc_buf[4];
 static int open_menu = MENU_NONE, menu_x, menu_y;
 static int m_iconbar[MENU_WORDS (7)];
 static int m_midi[MENU_WORDS (7)], m_midiout[MENU_WORDS (6)];
@@ -228,7 +234,12 @@ static int m_meter[MENU_WORDS (NMETERS)];
 static char meter_text[NMETERS][8];
 static int m_rename[MENU_WORDS (1)];
 static char rename_buf[GR_NAME];
-static int m_track[MENU_WORDS (7)], m_sound[MENU_WORDS (PATCH_COUNT + 1)], m_region[MENU_WORDS (6)];
+/* Track > MIDI channel, and Bank & program: numbers typed in (blank: auto). */
+static int m_chan[MENU_WORDS (17)], m_bank[MENU_WORDS (3)], m_num[3][MENU_WORDS (1)];
+static char num_buf[3][4];
+static const char *const chan_names[17] =
+  { "Auto", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16" };
+static int m_track[MENU_WORDS (9)], m_sound[MENU_WORDS (PATCH_COUNT + 1)], m_region[MENU_WORDS (6)];
 static int m_gm[MENU_WORDS (16)], m_gm_prog[16][MENU_WORDS (8)], m_gm_kits[MENU_WORDS (GM_NKITS)];
 static const char *const key_names[12] =
   { "C", "C#/Db", "D", "D#/Eb", "E", "F", "F#/Gb", "G", "G#/Ab", "A", "A#/Bb", "B" };
@@ -355,6 +366,47 @@ void app_sound_menu (int x, int y)
   app_check (_swix (Wimp_CreateMenu, _INR (1, 3), m_sound, menu_x, menu_y));
 }
 
+static void build_lane_menu (void)
+{
+  menu_builder b;
+  int i, cur = editor_lane_type (), other = 1;
+  menu_begin (&b, m_lane, "Controller");
+  for (i = 0; i < NLANE; i++)
+    {
+      int n = editor_lane_count (lane_types[i]);
+      if (n)
+        snprintf (lane_text[i], sizeof lane_text[i], "%s  (%d)", gr_ctl_name (lane_types[i]), n);
+      else
+        snprintf (lane_text[i], sizeof lane_text[i], "%s", gr_ctl_name (lane_types[i]));
+      menu_add (&b, lane_text[i], (cur == lane_types[i] ? MI_TICK : 0)
+                | (lane_types[i] == 93 || lane_types[i] == GR_CTL_PROGRAM ? MI_DOTTED : 0), NULL, 0);
+      if (cur == lane_types[i])
+        other = 0;
+    }
+  menu_add (&b, "Other CC", other ? MI_TICK : 0, m_lane_cc, 0);
+  menu_end (&b);
+  if (other && cur < 128)
+    snprintf (lane_cc_buf, sizeof lane_cc_buf, "%d", cur & 127);
+  else
+    lane_cc_buf[0] = 0;
+  menu_begin (&b, m_lane_cc, "CC number");
+  menu_add (&b, lane_cc_buf, MI_WRITABLE, NULL, 0);
+  b.m[7 + 3] = (int) lane_cc_buf;
+  b.m[7 + 4] = (int) "A0-9";
+  b.m[7 + 5] = sizeof lane_cc_buf;
+  b.maxlen = 10;
+  menu_end (&b);
+}
+
+void app_lane_menu (int x, int y)
+{
+  build_lane_menu ();
+  open_menu = MENU_LANE;
+  menu_x = x;
+  menu_y = y;
+  app_check (_swix (Wimp_CreateMenu, _INR (1, 3), m_lane, menu_x, menu_y));
+}
+
 /* Play on MIDI out: drum and instrument tracks can be; audio tracks can't. */
 static int song_has_notes_tracks (void)
 {
@@ -465,7 +517,43 @@ static void build_main_menu (void)
   menu_add (&b, "Delete track", MI_DOTTED, NULL, !has_t);
   menu_add (&b, "Play on MIDI out  F11", has_t && app.song.tracks[t].midi_out ? MI_TICK : 0, NULL,
             !has_t || app.song.tracks[t].type == TRK_AUDIO);
+  menu_add (&b, "MIDI channel", 0, m_chan, !has_t || app.song.tracks[t].type == TRK_AUDIO);
+  menu_add (&b, "Bank & program", 0, m_bank, !has_t || app.song.tracks[t].type == TRK_AUDIO);
   menu_end (&b);
+
+  /* The track's MIDI channel (for MIDI out and MIDI files): Auto, 1-16. */
+  menu_begin (&b, m_chan, "Channel");
+  for (i = 0; i < 17; i++)
+    menu_add (&b, chan_names[i], (has_t && app.song.tracks[t].channel == i - 1 ? MI_TICK : 0) | (i == 0 ? MI_DOTTED : 0),
+              NULL, 0);
+  menu_end (&b);
+  /* Bank Select MSB, LSB and program: each a number typed in, blank for
+     automatic (no Bank Select; the sound's own program). */
+  {
+    static const char *const titles[3] = { "Bank MSB", "Bank LSB", "Program" };
+    static const char *const items[3] = { "Bank MSB (CC 0)", "Bank LSB (CC 32)", "Program" };
+    int k;
+    menu_begin (&b, m_bank, "MIDI");
+    for (k = 0; k < 3; k++)
+      menu_add (&b, items[k], 0, m_num[k], 0);
+    menu_end (&b);
+    for (k = 0; k < 3; k++)
+      {
+        int v = !has_t ? -1 : k == 0 ? app.song.tracks[t].bank_msb : k == 1 ? app.song.tracks[t].bank_lsb
+                : app.song.tracks[t].program;
+        if (v >= 0 && v < 128)
+          snprintf (num_buf[k], sizeof num_buf[k], "%d", v & 127);
+        else
+          num_buf[k][0] = 0;
+        menu_begin (&b, m_num[k], titles[k]);
+        menu_add (&b, num_buf[k], MI_WRITABLE, NULL, 0);
+        b.m[7 + 3] = (int) num_buf[k];
+        b.m[7 + 4] = (int) "A0-9";      /* digits only */
+        b.m[7 + 5] = sizeof num_buf[k];
+        b.maxlen = 10;
+        menu_end (&b);
+      }
+  }
 
   menu_begin (&b, m_region, "Region");
   menu_add (&b, "Edit", 0, NULL, !has_r || app.song.regions[app.sel_region].clip >= 0);
@@ -658,6 +746,18 @@ static void menu_selection (int *sel)
       }
   else if (open_menu == MENU_SOUND)
     sound_chosen (sel);
+  else if (open_menu == MENU_LANE)
+    {
+      if (sel[0] >= 0 && sel[0] < NLANE)
+        editor_set_lane (lane_types[sel[0]]);
+      else if (sel[0] == NLANE && sel[1] == 0)
+        {
+          char *e;
+          long v = strtol (lane_cc_buf, &e, 10);
+          if (e != lane_cc_buf && v >= 0 && v <= 127)
+            editor_set_lane ((int) v);
+        }
+    }
   else if (open_menu == MENU_MAIN)
     switch (sel[0])
       {
@@ -716,6 +816,23 @@ static void menu_selection (int *sel)
           }
         else if (sel[1] == 6)
           app_track_midi_out ();
+        else if (sel[1] == 7 && sel[2] >= 0 && sel[2] < 17 && t >= 0 && t < app.song.ntracks)
+          {
+            midiout_reset ();     /* (notes off on the old channel) */
+            app.song.tracks[t].channel = sel[2] - 1;
+            app_changed ();
+          }
+        else if (sel[1] == 8 && sel[2] >= 0 && sel[2] < 3 && sel[3] == 0 && t >= 0 && t < app.song.ntracks)
+          {
+            /* A number 0-127, or blank (or anything else) for automatic. */
+            char *e;
+            long v = strtol (num_buf[sel[2]], &e, 10);
+            int *f = sel[2] == 0 ? &app.song.tracks[t].bank_msb : sel[2] == 1 ? &app.song.tracks[t].bank_lsb
+                     : &app.song.tracks[t].program;
+            *f = e != num_buf[sel[2]] && v >= 0 && v <= 127 ? (int) v : -1;
+            midiout_reset ();     /* (sent again, with the new numbers) */
+            app_changed ();
+          }
         break;
       case 2:                     /* Region */
         if (app.sel_region >= 0 && app.song.regions[app.sel_region].used)
@@ -789,8 +906,10 @@ static void menu_selection (int *sel)
         build_main_menu ();
       else if (open_menu == MENU_SOUND)
         build_sound_menu ();
+      else if (open_menu == MENU_LANE)
+        build_lane_menu ();
       _swix (Wimp_CreateMenu, _INR (1, 3), open_menu == MENU_MAIN ? m_main
-             : open_menu == MENU_SOUND ? m_sound : m_iconbar, menu_x, menu_y);
+             : open_menu == MENU_SOUND ? m_sound : open_menu == MENU_LANE ? m_lane : m_iconbar, menu_x, menu_y);
     }
 }
 
@@ -1057,6 +1176,7 @@ void app_undo (int redo)
   if (app.sel_region >= 0 && !app.song.regions[app.sel_region].used)
     app.sel_region = -1;
   editor_show (app.sel_region);
+  editor_changed ();                          /* (notes undone drop out of the selection) */
   arrange_set_extent ();
   app.unsaved = !gr_history_is_saved (app.hist);
   if (app.main_open)

@@ -20,19 +20,30 @@
 #define GR_BAR           (4 * GR_PPQ)  /* four beats: a 4/4 bar, and the zoom scale */
 #define GR_STEP          (GR_PPQ / 4)  /* one sixteenth */
 
-#define GR_MAX_TRACKS    16
-#define GR_MAX_REGIONS   256           /* room for an imported MIDI file */
-#define GR_MAX_PATTERNS  256
+#define GR_MAX_TRACKS    32
+#define GR_MAX_REGIONS   1024          /* room for a long imported MIDI file:
+                                          16 parts of 4-bar regions, 256 bars */
+#define GR_MAX_PATTERNS  1024
 #define GR_MAX_NOTES     384           /* per pattern */
+#define GR_MAX_CTLS      512           /* controller events per pattern */
 #define GR_MAX_CLIPS     16
 #define GR_MAX_METERS    32            /* time signature changes */
 #define GR_NAME          24
 
-#define GR_DRUM_SOUNDS   8           /* rows in the step grid */
+#define GR_DRUM_SOUNDS   8           /* Groove's own drum sounds (GV_*) */
 
 typedef enum { TRK_DRUMS = 0, TRK_INST = 1, TRK_AUDIO = 2 } gr_track_type;
 
-enum { DR_KICK, DR_SNARE, DR_CHAT, DR_OHAT, DR_CLAP, DR_LTOM, DR_HTOM, DR_PERC };
+/* Drum notes are MIDI keys, 0..127, as in General MIDI's drum map. These
+   are the eight that Groove's own kits have a sound of their own for
+   (the step grid's standard rows); any other key plays the nearest of
+   them (gr_drum_voice), and its own sound on a SoundFont kit or a MIDI
+   instrument. Before 0.3 drum notes were 0..7, these in this order: song
+   files of that age are converted when they're loaded. */
+enum { DR_KICK = 36, DR_SNARE = 38, DR_CHAT = 42, DR_OHAT = 46, DR_CLAP = 39,
+       DR_LTOM = 45, DR_HTOM = 50, DR_PERC = 56 };
+/* Groove's own drum sounds (the voices of its kits). */
+enum { GV_KICK, GV_SNARE, GV_CHAT, GV_OHAT, GV_CLAP, GV_LTOM, GV_HTOM, GV_PERC };
 
 enum { PATCH_EPIANO, PATCH_BASS, PATCH_PAD, PATCH_LEAD, PATCH_PLUCK,
        PATCH_ORGAN, PATCH_BELL, PATCH_COUNT };
@@ -43,9 +54,23 @@ typedef struct
 {
   int16_t tick;                 /* from the start of the pattern */
   int16_t len;                  /* ticks (ignored for drums) */
-  uint8_t pitch;                /* MIDI note, or DR_* for drums */
+  uint8_t pitch;                /* MIDI note 0..127 (drums too: DR_* and the rest) */
   uint8_t vel;                  /* 1..127 */
 } gr_note;
+
+/* A controller event: a MIDI Control Change (type 0..127, value 0..127),
+   or a program change, pitch bend (-8192..8191, 0 is the middle) or
+   channel pressure. They play on SoundFont sounds and MIDI out; Groove's
+   own synths take no notice of them. */
+enum { GR_CTL_PROGRAM = 128, GR_CTL_BEND = 129, GR_CTL_PRESSURE = 130, GR_CTL_TYPES = 131 };
+
+typedef struct
+{
+  int16_t tick;                 /* from the start of the pattern */
+  uint8_t type;                 /* 0..127: CC number; GR_CTL_* */
+  uint8_t spare;
+  int16_t value;
+} gr_ctl;
 
 typedef struct
 {
@@ -54,6 +79,8 @@ typedef struct
   int len;                      /* ticks; the region loops it */
   int nnotes;
   gr_note notes[GR_MAX_NOTES];  /* kept sorted by tick */
+  int nctls;
+  gr_ctl ctls[GR_MAX_CTLS];     /* kept sorted by tick */
 } gr_pattern;
 
 typedef struct
@@ -91,6 +118,11 @@ typedef struct
   int mute, solo, armed;
   int midi_out;                 /* 1: played on a MIDI device (gr_engine_set_midi_out)
                                    rather than by Groove, where there is one */
+  /* For MIDI out and exported MIDI files; -1 for each means automatic. */
+  int channel;                  /* 0..15 (shown 1..16); auto: drums 10, each
+                                   instrument track the next free channel */
+  int bank_msb, bank_lsb;       /* Bank Select (CC 0 and 32) before the program */
+  int program;                  /* 0..127; auto: the sound's GM program */
   float meter;                  /* peak level for the UI, decays */
 } gr_track;
 
@@ -130,6 +162,19 @@ int  gr_pattern_new (gr_song *s, const char *name, int len);
 int  gr_pattern_add_note (gr_pattern *p, int tick, int len, int pitch, int vel);
 int  gr_pattern_find_note (const gr_pattern *p, int tick, int pitch);
 void gr_pattern_delete_note (gr_pattern *p, int index);
+/* Controller events. Set: one of this type at this tick (replacing one
+   there); returns its index, or -1 if the pattern is full. */
+int  gr_pattern_set_ctl (gr_pattern *p, int tick, int type, int value);
+int  gr_pattern_find_ctl (const gr_pattern *p, int tick, int type);
+void gr_pattern_delete_ctl (gr_pattern *p, int index);
+/* The value in force at tick (the last event at or before it), or dflt. */
+int  gr_ctl_value_at (const gr_pattern *p, int tick, int type, int dflt);
+/* A type's range, its value when nothing has set it, and its name
+   ("Modulation (CC 1)", "Pitch bend"). */
+int  gr_ctl_min (int type);
+int  gr_ctl_max (int type);
+int  gr_ctl_default (int type);
+const char *gr_ctl_name (int type);
 int  gr_region_add (gr_song *s, int track, int start, int len, int pattern);
 void gr_region_delete (gr_song *s, int region);
 int  gr_region_at (const gr_song *s, int track, int tick);
@@ -214,6 +259,10 @@ void gr_engine_set_midi_out (gr_engine *e, gr_midi_sender *fn, void *ctx);
 void gr_midi_out_reset (gr_engine *e);
 unsigned gr_frames (const gr_engine *e);        /* frames rendered so far */
 int  gr_patch_program (int patch);              /* Groove's sound's nearest GM program */
+/* A track's MIDI channel (0..15) and program (0..127) for MIDI out and
+   MIDI files: its own if it has one, else the automatic one. */
+int  gr_track_channel (const gr_song *s, int track);
+int  gr_track_program (const gr_track *t);
 
 /* Live playing (musical typing, MIDI, clicks on the piano roll). */
 void gr_live_on (gr_engine *e, int track, int pitch, int vel);
@@ -281,7 +330,7 @@ const char *gr_gm_program_name (int program);    /* "Acoustic Grand Piano" ... *
 const char *gr_gm_family_name (int family);      /* 0..15: "Piano" ... */
 int  gr_gm_kit (int i);                          /* i-th kit's program, i < GM_NKITS */
 const char *gr_gm_kit_name (int program);
-int  gr_gm_drum_note (int sound);                /* DR_* -> GM drum key */
+int  gr_gm_drum_note (int voice);                /* GV_* -> its GM drum key (DR_*) */
 int  gr_song_uses_gm (const gr_song *s);
 /* The name of a track's sound, whichever kind it is. */
 const char *gr_sound_name (const gr_track *t);
@@ -296,9 +345,9 @@ int  gr_midi_import (gr_song *s, const char *path, int tick, const char **why);
 /* Export the song as a type 1 MIDI file: a MIDI track per Groove track
    (not audio), drums on channel 10. */
 int  gr_midi_export (const gr_song *s, const char *path);
-/* A General MIDI drum key (35 kick, 38 snare, 42 hi-hat...) to the step
-   grid's row for it. */
-int  gr_drum_row_for_key (int key);
+/* Which of Groove's own drum sounds (GV_*) plays a drum key (35 kick, 38
+   snare, 42 hi-hat...): its own, or the nearest. */
+int  gr_drum_voice (int key);
 
 /* ---- Maestro files (maestro.c) -------------------------------------------- */
 /* Import a RISC OS Maestro file (&AF1): a track per channel that has notes,
@@ -314,7 +363,11 @@ int  gr_maestro_import (gr_song *s, const char *path, int tick,
 /* ---- names for the UI --------------------------------------------------- */
 const char *gr_patch_name (int patch);
 const char *gr_kit_name (int kit);
-const char *gr_drum_name (int sound);
+/* A drum key's name: Groove's for its own eight ("Kick"), General MIDI's
+   for the rest of 35..81 ("Crash Cymbal 1"), else the note ("C4 60"). */
+const char *gr_drum_name (int key);
+/* The step grid's standard rows: Groove's eight drums' keys, in order. */
+int  gr_drum_kit_key (int row);
 const char *gr_note_name (int pitch, char buf[8]);
 const char *gr_key_name (int key);
 

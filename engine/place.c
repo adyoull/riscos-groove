@@ -96,3 +96,55 @@ int gr_place_notes (gr_song *s, int t, const gr_pnote *m, int n, int from, int *
     }
   return 0;
 }
+
+int gr_place_ctls (gr_song *s, int t, const gr_pctl *c, int n, int from, int *full_at, int *dropped)
+{
+  int k, made = -1;             /* the region made last for events over a rest */
+  for (k = 0; k < n; k++)
+    {
+      int at = from + c[k].tick, i, r = -1;
+      for (i = 0; i < GR_MAX_REGIONS; i++)
+        {
+          const gr_region *g = &s->regions[i];
+          if (g->used && g->track == t && g->clip < 0 && g->pattern >= 0
+              && at >= g->start && at < g->start + g->len)
+            {
+              r = i;
+              break;
+            }
+        }
+      if (r < 0)
+        {
+          /* No region here: a bar of its own, or the one made last
+             grown to reach it when it's the next bar. */
+          int bar = gr_tick_bar (s, at), b0 = gr_bar_tick (s, bar), bl = gr_bar_len (s, bar);
+          if (made >= 0 && s->regions[made].start + s->regions[made].len == b0)
+            {
+              gr_region *g = &s->regions[made];
+              g->len += bl;
+              s->patterns[g->pattern].len = g->len;
+              r = made;
+            }
+          else
+            {
+              int pat = gr_pattern_new (s, s->tracks[t].name, bl);
+              r = pat < 0 ? -1 : gr_region_add (s, t, b0, bl, pat);
+              if (r < 0)
+                {
+                  if (pat >= 0)
+                    s->patterns[pat].used = 0;
+                  *full_at = at;
+                  return -1;
+                }
+              made = r;
+            }
+        }
+      {
+        const gr_region *g = &s->regions[r];
+        gr_pattern *p = &s->patterns[g->pattern];
+        if (gr_pattern_set_ctl (p, (at - g->start) % p->len, c[k].type, c[k].value) < 0)
+          (*dropped)++;
+      }
+    }
+  return 0;
+}

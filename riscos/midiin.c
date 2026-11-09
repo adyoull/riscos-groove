@@ -5,8 +5,8 @@
    module of the same name).
 
    Notes go where musical typing's do: the selected track, played live and
-   recorded the same way, with the keyboard's velocity. On a drum track the
-   General MIDI drum keys play the step grid's drums. The sustain pedal
+   recorded the same way, with the keyboard's velocity. On a drum track each
+   key is that drum (General MIDI's drum map). The sustain pedal
    (controller 64) holds notes until it's let go.
 
    Two ways in:
@@ -73,10 +73,10 @@ int midiin_present (void)
 }
 
 /* Register with MIDI Support, if it's there and we haven't. MIDI Support
-   shows the version in hundredths (23: "0:23", for 0.2.3) and the date as
+   shows the version in hundredths (30: "0:30", for 0.3) and the date as
    given, so it's given the way the other drivers give theirs ("2 Nov 2026"
    rather than "02-Nov-2026"). */
-#define MS_VERSION 23
+#define MS_VERSION 30
 static void ms_register (void)
 {
   int n = -1, h = 0;
@@ -168,8 +168,6 @@ static void note_on (int ch, int key, int vel)
     end_note (ch, key);         /* the same key again: end the old one first */
   if (t < 0 || t >= app.song.ntracks || app.song.tracks[t].type == TRK_AUDIO)
     return;
-  if (app.song.tracks[t].type == TRK_DRUMS)
-    pitch = gr_drum_row_for_key (key);
   gr_live_on (app.eng, t, pitch, vel);
   held_track[ch][key] = (unsigned char) (t + 1);
   held_pitch[ch][key] = (unsigned char) pitch;

@@ -4,7 +4,7 @@
 
 /* Notes a SoundFont can sound at once. Each costs processor time on the
    Pi; TinySoundFont steals the oldest when they run out. */
-#define GM_VOICES 48
+#define GM_VOICES 96
 
 /* MIDI channels Groove uses: 0-15 on the first synth, 16-31 on a second
    one, which is only loaded for a 16th instrument track (libmidisynth's

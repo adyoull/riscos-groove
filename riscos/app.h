@@ -18,8 +18,8 @@
 #include "layout.h"
 
 #define APP_NAME     "Groove"
-#define APP_VERSION  "0.2.3"
-#define APP_DATE     "04-Nov-2026"
+#define APP_VERSION  "0.3"
+#define APP_DATE     "07-Nov-2026"
 #define TASK_WORD    0x4B534154
 
 #define FILETYPE_SONG  0xFFF       /* Text, until a type is allocated */
@@ -134,6 +134,14 @@ int  arrange_key (int code);                   /* Space, R, Return, cursors... *
 /* editor.c */
 int  editor_create (void);
 void editor_open (void);
+void editor_changed (void);        /* the song changed: the step grid's rows may have */
+void editor_all_keys (int on);
+/* The controller lane: the kind of event it shows (a CC number, GR_CTL_*). */
+int  editor_lane_type (void);
+void editor_set_lane (int type);
+int  editor_lane_count (int type);  /* events of a type in the part */
+void app_lane_menu (int x, int y);  /* the lane's menu of controllers */     /* the step grid: all 128 drum keys, or the kit's rows */
+int  editor_all_keys_on (void);
 void editor_show (int region);                 /* the region to edit (or -1) */
 void editor_redraw (int *b);
 void editor_click (int *b);

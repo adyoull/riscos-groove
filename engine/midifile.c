@@ -21,6 +21,9 @@ typedef struct
   mnote *notes;
   int n, cap;
   int program;                  /* first program change, or -1 */
+  int bank_msb, bank_lsb;       /* Bank Select before it, or -1 */
+  gr_pctl *ctls;                /* the rest: controllers, later program changes, */
+  int nctl, ctlcap;             /* pitch bend, channel pressure (file ticks) */
   int open_start[128], open_vel[128];   /* start tick + 1 of a held key, 0 = none */
 } mchan;
 
@@ -63,6 +66,30 @@ static int add_note (mchan *c, int start, int end, int key, int vel)
   c->notes[c->n].vel = vel;
   c->n++;
   return 0;
+}
+
+static int add_ctl (mchan *c, long tick, int type, int value)
+{
+  if (c->nctl == c->ctlcap)
+    {
+      int cap = c->ctlcap ? c->ctlcap * 2 : 256;
+      gr_pctl *m = realloc (c->ctls, (size_t) cap * sizeof *m);
+      if (!m)
+        return -1;
+      c->ctls = m;
+      c->ctlcap = cap;
+    }
+  c->ctls[c->nctl].tick = (int) tick;
+  c->ctls[c->nctl].type = type;
+  c->ctls[c->nctl].value = value;
+  c->nctl++;
+  return 0;
+}
+
+static int cmp_pctl (const void *a, const void *b)
+{
+  const gr_pctl *x = a, *y = b;
+  return x->tick != y->tick ? (x->tick < y->tick ? -1 : 1) : 0;
 }
 
 static void key_off (mchan *c, int key, long tick)
@@ -152,8 +179,26 @@ static int read_track (rd *r, mchan *ch, long *tempo, long *last)
             key_off (c, a, tick);
             break;
           case 0xC0:
+            /* The first is the track's sound; later ones are events. */
             if (c->program < 0)
               c->program = a;
+            else
+              add_ctl (c, tick, GR_CTL_PROGRAM, a);
+            break;
+          case 0xB0:
+            /* Bank Select before the first program is the track's bank. */
+            if (c->program < 0 && a == 0)
+              c->bank_msb = b;
+            else if (c->program < 0 && a == 32)
+              c->bank_lsb = b;
+            else
+              add_ctl (c, tick, a, b);
+            break;
+          case 0xE0:
+            add_ctl (c, tick, GR_CTL_BEND, (a | b << 7) - 8192);
+            break;
+          case 0xD0:
+            add_ctl (c, tick, GR_CTL_PRESSURE, a);
             break;
           }
       }
@@ -173,19 +218,19 @@ static int nearest_patch (int program)
   return by_family[(program & 127) / 8];
 }
 
-/* A GM drum key's row in the step grid. */
-int gr_drum_row_for_key (int key)
+/* Which of Groove's own drum sounds plays a drum key. */
+int gr_drum_voice (int key)
 {
   switch (key)
     {
-    case 35: case 36: return DR_KICK;
-    case 37: case 38: case 40: return DR_SNARE;
-    case 39: return DR_CLAP;
-    case 42: case 44: return DR_CHAT;
-    case 46: return DR_OHAT;
-    case 41: case 43: case 45: case 47: return DR_LTOM;
-    case 48: case 50: return DR_HTOM;
-    default: return DR_PERC;  /* cymbals, cowbell, the rest of the kit */
+    case 35: case 36: return GV_KICK;
+    case 37: case 38: case 40: return GV_SNARE;
+    case 39: return GV_CLAP;
+    case 42: case 44: return GV_CHAT;
+    case 46: return GV_OHAT;
+    case 41: case 43: case 45: case 47: return GV_LTOM;
+    case 48: case 50: return GV_HTOM;
+    default: return GV_PERC;  /* cymbals, cowbell, the rest of the kit */
     }
 }
 
@@ -239,7 +284,7 @@ int gr_midi_import (gr_song *s, const char *path, int from, const char **why)
       return -1;
     }
   for (c = 0; c < 16; c++)
-    ch[c].program = -1;
+    ch[c].program = ch[c].bank_msb = ch[c].bank_lsb = -1;
   nts = 0;
   r.p = data + 8 + be32 (data + 4);
   r.end = data + size;
@@ -322,16 +367,23 @@ int gr_midi_import (gr_song *s, const char *path, int from, const char **why)
       s->tracks[t].gm = drums ? 0 : prog;
       if (drums && m->program >= 0)
         s->tracks[t].gm = m->program;
+      /* The part keeps its channel and bank for MIDI out and export. */
+      s->tracks[t].channel = c;
+      s->tracks[t].bank_msb = m->bank_msb;
+      s->tracks[t].bank_lsb = m->bank_lsb;
       /* The file's ticks to Groove's. */
       for (k = 0; k < m->n; k++)
         {
           m->notes[k].start = (int) ((long long) m->notes[k].start * GR_PPQ / division);
           m->notes[k].end = (int) ((long long) m->notes[k].end * GR_PPQ / division);
-          if (drums)
-            m->notes[k].key = gr_drum_row_for_key (m->notes[k].key);
         }
+      for (k = 0; k < m->nctl; k++)
+        m->ctls[k].tick = (int) ((long long) m->ctls[k].tick * GR_PPQ / division);
+      if (m->nctl > 1)
+        qsort (m->ctls, (size_t) m->nctl, sizeof *m->ctls, cmp_pctl);
       made++;
-      if (gr_place_notes (s, t, m->notes, m->n, from, &full_at, &dropped))
+      if (gr_place_notes (s, t, m->notes, m->n, from, &full_at, &dropped)
+          || gr_place_ctls (s, t, m->ctls, m->nctl, from, &full_at, &dropped))
         {
           snprintf (msg, sizeof msg, "The song is full: the MIDI file was imported up to bar %d",
                     gr_tick_bar (s, full_at) + 1);
@@ -340,20 +392,23 @@ int gr_midi_import (gr_song *s, const char *path, int from, const char **why)
     }
   if (!*why && dropped)
     {
-      snprintf (msg, sizeof msg, "%d notes didn't fit and were left out", dropped);
+      snprintf (msg, sizeof msg, "%d notes or controller events didn't fit and were left out", dropped);
       *why = msg;
     }
   if (!made && !*why)
     *why = "That MIDI file has no notes";
   for (c = 0; c < 16; c++)
-    free (ch[c].notes);
+    {
+      free (ch[c].notes);
+      free (ch[c].ctls);
+    }
   free (ch);
   return made ? made : -1;
 }
 
 /* ---- writing ------------------------------------------------------------------ */
 
-typedef struct { int tick, order; unsigned char b[3]; } mev;
+typedef struct { int tick, order, n; unsigned char b[3]; } mev;   /* n: bytes in b */
 
 typedef struct
 {
@@ -397,7 +452,7 @@ static int cmp_ev (const void *a, const void *b)
   const mev *x = a, *y = b;
   if (x->tick != y->tick)
     return x->tick < y->tick ? -1 : 1;
-  return x->order - y->order;      /* note-offs before note-ons at the same tick */
+  return x->order - y->order;      /* note-offs, then controllers, then note-ons at the same tick */
 }
 
 /* Groove's own sounds as GM programs, for other programs to play. */
@@ -420,7 +475,7 @@ int gr_midi_export (const gr_song *s, const char *path)
   FILE *f;
   buf b = { 0, 0, 0 };
   mev *ev = NULL;
-  int t, ntracks = 1, rc = 0, chan_of[GR_MAX_TRACKS];
+  int t, ntracks = 1, rc = 0;
   unsigned long us = 60000000UL / (unsigned long) s->tempo;
   unsigned char h[14] = { 'M', 'T', 'h', 'd', 0, 0, 0, 6, 0, 1, 0, 0, 0, GR_PPQ };
   for (t = 0; t < s->ntracks; t++)
@@ -458,23 +513,12 @@ int gr_midi_export (const gr_song *s, const char *path)
     }
     rc |= write_chunk (f, &b);
   }
-  /* MIDI channels: drums on 10 (9 here), each instrument track the next
-     free one of the other 15. (Only a song of 16 instrument tracks runs
-     out: its last shares channel 16.) */
-  {
-    int next = 0;
-    for (t = 0; t < s->ntracks; t++)
-      if (s->tracks[t].type == TRK_INST)
-        {
-          if (next == 9)
-            next++;
-          chan_of[t] = next < 16 ? next++ : 15;
-        }
-  }
   for (t = 0; t < s->ntracks && !rc; t++)
     {
       const gr_track *tr = &s->tracks[t];
-      int drums = tr->type == TRK_DRUMS, chn = drums ? 9 : chan_of[t], nev = 0, cap = 0, i, now = 0, len;
+      /* Each track's channel: its own, or drums on 10 (9 here) and each
+         instrument track the next free one (gr_track_channel). */
+      int drums = tr->type == TRK_DRUMS, chn = gr_track_channel (s, t), nev = 0, cap = 0, i, now = 0, len;
       unsigned char hd[8];
       if (tr->type == TRK_AUDIO)
         continue;
@@ -512,16 +556,59 @@ int gr_midi_export (const gr_song *s, const char *path)
                       ev = m;
                     }
                   ev[nev].tick = on;
-                  ev[nev].order = 1;
+                  ev[nev].order = 2;
+                  ev[nev].n = 3;
                   ev[nev].b[0] = (unsigned char) (0x90 | chn);
-                  ev[nev].b[1] = (unsigned char) (drums ? gr_gm_drum_note (n->pitch % GR_DRUM_SOUNDS) : n->pitch & 127);
+                  ev[nev].b[1] = (unsigned char) (n->pitch & 127);
                   ev[nev].b[2] = n->vel ? n->vel : 1;
                   ev[nev + 1] = ev[nev];
                   ev[nev + 1].tick = off;
                   ev[nev + 1].order = 0;
+                  ev[nev + 1].n = 3;
                   ev[nev + 1].b[0] = (unsigned char) (0x80 | chn);
                   ev[nev + 1].b[2] = 64;
                   nev += 2;
+                }
+              /* Controller events, each time the pattern plays. */
+              for (k = 0; k < p->nctls; k++)
+                {
+                  const gr_ctl *c = &p->ctls[k];
+                  int at = r->start + rep * p->len + c->tick, v = c->value;
+                  if (at >= r->start + r->len)
+                    continue;
+                  if (nev + 1 > cap)
+                    {
+                      mev *m;
+                      cap = cap ? cap * 2 : 1024;
+                      if (!(m = realloc (ev, (size_t) cap * sizeof *m)))
+                        {
+                          rc = -1;
+                          goto done;
+                        }
+                      ev = m;
+                    }
+                  ev[nev].tick = at;
+                  ev[nev].order = 1;
+                  ev[nev].n = 3;
+                  if (c->type < 128)
+                    {
+                      ev[nev].b[0] = (unsigned char) (0xB0 | chn);
+                      ev[nev].b[1] = c->type;
+                      ev[nev].b[2] = (unsigned char) (v & 127);
+                    }
+                  else if (c->type == GR_CTL_BEND)
+                    {
+                      ev[nev].b[0] = (unsigned char) (0xE0 | chn);
+                      ev[nev].b[1] = (unsigned char) ((v + 8192) & 127);
+                      ev[nev].b[2] = (unsigned char) (((v + 8192) >> 7) & 127);
+                    }
+                  else
+                    {
+                      ev[nev].b[0] = (unsigned char) ((c->type == GR_CTL_PROGRAM ? 0xC0 : 0xD0) | chn);
+                      ev[nev].b[1] = (unsigned char) (v & 127);
+                      ev[nev].n = 2;
+                    }
+                  nev++;
                 }
             }
         }
@@ -532,9 +619,18 @@ int gr_midi_export (const gr_song *s, const char *path)
       hd[0] = 0; hd[1] = 0xFF; hd[2] = 0x03; hd[3] = (unsigned char) len;
       rc |= put (&b, hd, 4);
       rc |= put (&b, tr->name, (size_t) len);
+      if (tr->bank_msb >= 0)
+        {
+          hd[0] = 0; hd[1] = (unsigned char) (0xB0 | chn); hd[2] = 0; hd[3] = (unsigned char) tr->bank_msb;
+          rc |= put (&b, hd, 4);
+        }
+      if (tr->bank_lsb >= 0)
+        {
+          hd[0] = 0; hd[1] = (unsigned char) (0xB0 | chn); hd[2] = 32; hd[3] = (unsigned char) tr->bank_lsb;
+          rc |= put (&b, hd, 4);
+        }
       hd[0] = 0; hd[1] = (unsigned char) (0xC0 | chn);
-      hd[2] = (unsigned char) (tr->gm >= 0 ? tr->gm : drums ? (tr->patch == KIT_ELECTRO ? GM_KIT_808 : 0)
-                               : gr_patch_program (tr->patch));
+      hd[2] = (unsigned char) gr_track_program (tr);
       rc |= put (&b, hd, 3);
       hd[0] = 0; hd[1] = (unsigned char) (0xB0 | chn); hd[2] = 7;
       hd[3] = (unsigned char) (tr->vol * 127.0f + 0.5f > 127 ? 127 : tr->vol * 127.0f + 0.5f);
@@ -545,7 +641,7 @@ int gr_midi_export (const gr_song *s, const char *path)
       for (i = 0; i < nev; i++)
         {
           rc |= put_vlq (&b, (unsigned long) (ev[i].tick - now));
-          rc |= put (&b, ev[i].b, 3);
+          rc |= put (&b, ev[i].b, (size_t) ev[i].n);
           now = ev[i].tick;
         }
       hd[0] = 0; hd[1] = 0xFF; hd[2] = 0x2F; hd[3] = 0;

@@ -57,6 +57,8 @@ int editor_selected (void) { return nsel; }
 static char title[64] = "Editor";
 static int last_step = -1;      /* playhead column last drawn */
 static int head_scroll;         /* the scroll offset the header was last drawn at */
+static int lane_scroll;         /* and the controller lane */
+static int lane_vis_h;          /* the window's visible height when last opened */
 
 /* The header strip (the region's name, the sound, the length buttons) is
    pinned to the top of the window: it is drawn at the visible top whatever
@@ -68,8 +70,87 @@ static void redraw_head (int scroll)
 }
 
 /* Header buttons (work-area x ranges, in the ED_HEAD_H strip). */
-enum { EB_SOUND, EB_LEN1, EB_LEN2, EB_LEN4, EB_CLEAR, EB_COUNT };
-static const int eb_x[EB_COUNT][2] = { { 300, 640 }, { 660, 780 }, { 788, 908 }, { 916, 1036 }, { 1056, 1168 } };
+enum { EB_SOUND, EB_LEN1, EB_LEN2, EB_LEN4, EB_CLEAR, EB_KEYS, EB_COUNT };
+static const int eb_x[EB_COUNT][2] = { { 300, 640 }, { 660, 780 }, { 788, 908 }, { 916, 1036 }, { 1056, 1168 },
+                                       { 1188, 1332 } };
+#define ED_HINT_X 1352
+
+/* ---- the step grid's rows -------------------------------------------------
+   Each row is a drum key (0..127). Kit rows: Groove's eight drums, then any
+   other keys the part uses, lowest first. All keys: 0 to 127. */
+static int all_keys;
+static int drow[128], ndrow = GR_DRUM_SOUNDS;
+
+static gr_pattern *pat (void);
+static gr_track *trk (void);
+
+/* fix: also size the window's extent to the rows (not while redrawing). */
+static void drum_rows (int fix)
+{
+  gr_pattern *p = pat ();
+  unsigned char used[128];
+  int k, i, before = ndrow;
+  ndrow = 0;
+  if (all_keys)
+    for (k = 0; k < 128; k++)
+      drow[ndrow++] = k;
+  else
+    {
+      memset (used, 0, sizeof used);
+      for (i = 0; i < GR_DRUM_SOUNDS; i++)
+        {
+          drow[ndrow++] = gr_drum_kit_key (i);
+          used[drow[i]] = 2;
+        }
+      if (p)
+        for (k = 0; k < p->nnotes; k++)
+          if (!used[p->notes[k].pitch & 127])
+            used[p->notes[k].pitch & 127] = 1;
+      for (k = 0; k < 128; k++)
+        if (used[k] == 1)
+          drow[ndrow++] = k;
+    }
+  lay_drum_rows = ndrow;
+  if (ndrow != before)
+    lay_drum_h = lay_fit_drum_rows (0);
+  if (fix)
+    {
+      gr_track *t = trk ();
+      app_set_extent (app.w_edit, 0x2000, lay_editor_height (t ? t->type : TRK_INST));
+    }
+}
+
+/* The song has changed (an edit, Undo, an import): the rows may have too,
+   and selected notes may have gone. */
+void editor_changed (void)
+{
+  gr_track *t = trk ();
+  gr_pattern *p = pat ();
+  int i, k;
+  if (t && t->type == TRK_DRUMS)
+    drum_rows (1);
+  for (i = 0; i < nsel; )
+    {
+      for (k = 0; p && k < p->nnotes; k++)
+        if (p->notes[k].tick == sel[i].tick && p->notes[k].pitch == sel[i].pitch)
+          break;
+      if (p && k < p->nnotes)
+        i++;
+      else
+        sel[i] = sel[--nsel];
+    }
+}
+
+/* The note on a drum key in a step (anywhere in it: an imported note may
+   not be on the step), or -1. */
+static int step_note (const gr_pattern *p, int step, int key)
+{
+  int k, t0 = step * GR_STEP;
+  for (k = 0; k < p->nnotes; k++)
+    if (p->notes[k].pitch == key && p->notes[k].tick >= t0 && p->notes[k].tick < t0 + GR_STEP)
+      return k;
+  return -1;
+}
 
 static gr_region *reg (void)
 {
@@ -166,6 +247,9 @@ void editor_show (int r)
   t = trk ();
   last_step = -1;
   set_title ();
+  lay_label_w = t && t->type == TRK_DRUMS ? ED_LABEL_DRUMS : ED_LABEL_KEYS;
+  if (t && t->type == TRK_DRUMS)
+    drum_rows (0);
   app_set_extent (app.w_edit, 0x2000, lay_editor_height (t ? t->type : TRK_INST));
   if (!app.edit_open)
     return;
@@ -192,6 +276,25 @@ void editor_show (int r)
   app_redraw_all (app.w_edit);
 }
 
+/* The step grid: all 128 drum keys, or the kit's rows (and keys in use).
+   Showing all of them scrolls to General MIDI's drums (key 35 on). */
+void editor_all_keys (int on)
+{
+  all_keys = on != 0;
+  drum_rows (1);
+  if (app.edit_open)
+    {
+      int s[10];
+      s[0] = app.w_edit;
+      _swix (Wimp_GetWindowState, _IN (1), s);
+      s[6] = all_keys ? -35 * ED_DRUM_H : 0;
+      _swix (Wimp_OpenWindow, _IN (1), s);
+      app_redraw_all (app.w_edit);
+    }
+}
+
+int editor_all_keys_on (void) { return all_keys; }
+
 void editor_open (void)
 {
   if (region < 0 && app.sel_region >= 0)
@@ -203,7 +306,15 @@ void editor_open (void)
     int st[10];
     st[0] = app.w_edit;
     if (!_swix (Wimp_GetWindowState, _IN (1), st))
-      app.edit_width = st[3] - st[1];
+      {
+        gr_track *t = trk ();
+        app.edit_width = st[3] - st[1];
+        lane_vis_h = st[4] - st[2];
+        lane_scroll = st[6];
+        lay_drum_h = lay_fit_drum_rows (lane_vis_h);
+        if (t)
+          app_set_extent (app.w_edit, 0x2000, lay_editor_height (t->type));
+      }
   }
   app.edit_open = 1;
   editor_show (region);
@@ -226,6 +337,18 @@ void editor_open_request (int *b)
       app.edit_width = b[3] - b[1];
       app_redraw_all (app.w_edit);     /* re-flow the grid to the new width */
     }
+  else if (b[4] - b[2] != lane_vis_h || b[6] != lane_scroll)
+    app_redraw_all (app.w_edit);       /* the lane is pinned to the visible bottom */
+  if (b[4] - b[2] != lane_vis_h)
+    {
+      /* Drum rows sized to fill what can be seen above the lane. */
+      gr_track *t = trk ();
+      lay_drum_h = lay_fit_drum_rows (b[4] - b[2]);
+      if (t)
+        app_set_extent (app.w_edit, 0x2000, lay_editor_height (t->type));
+    }
+  lane_vis_h = b[4] - b[2];
+  lane_scroll = b[6];
   app.edit_open = 1;
 }
 
@@ -260,15 +383,18 @@ static void paint_head (int ox, int oy, const int *clip)
   gfx_text (ox + 16, y0 + 20, p->name, C_TEXT, 0x34363B, 0);
   for (i = 0; i < EB_COUNT; i++)
     {
-      static const char *const labels[] = { "", "1 bar", "2 bars", "4 bars", "Clear" };
+      static const char *const labels[] = { "", "1 bar", "2 bars", "4 bars", "Clear", "" };
       int bl = region_bar ();
       int on = (i == EB_LEN1 && p->len == bl) || (i == EB_LEN2 && p->len == 2 * bl)
                || (i == EB_LEN4 && p->len == 4 * bl);
       unsigned bg = i == EB_SOUND ? gfx_track_colour (t->type, t->patch, t->gm, 1) : on ? C_BUTTON_ON : C_BUTTON;
+      if (i == EB_KEYS && t->type != TRK_DRUMS)
+        continue;                 /* (drums only) */
       gfx_colour (bg);
       gfx_round (ox + eb_x[i][0], y0 + 8, ox + eb_x[i][1], y1 - 8, 8);
       gfx_text (ox + (eb_x[i][0] + eb_x[i][1]) / 2, y0 + 20,
-                i == EB_SOUND ? gr_sound_name (t) : labels[i], C_TEXT, bg, 1);
+                i == EB_SOUND ? gr_sound_name (t) : i == EB_KEYS ? (all_keys ? "Kit rows" : "All keys")
+                : labels[i], C_TEXT, bg, 1);
     }
   if (t->type == TRK_INST && nsel)
     {
@@ -281,10 +407,10 @@ static void paint_head (int ox, int oy, const int *clip)
             break;
           }
       snprintf (hint, sizeof hint, "%d selected  velocity %d: Ctrl+Up/Down   Up/Down: pitch", nsel, v);
-      gfx_text (ox + 1192, y0 + 20, hint, C_TEXT, 0x34363B, 0);
+      gfx_text (ox + ED_HINT_X, y0 + 20, hint, C_TEXT, 0x34363B, 0);
     }
   else
-    gfx_text (ox + 1192, y0 + 20, t->type == TRK_DRUMS ? "Select: on/off   Adjust: accent"
+    gfx_text (ox + ED_HINT_X, y0 + 20, t->type == TRK_DRUMS ? "Select: on/off   Adjust: accent"
                                                       : "Select: draw/move   Adjust: delete   Shift: select",
               C_TEXT_DIM, 0x34363B, 0);
 }
@@ -296,19 +422,29 @@ static void paint_grid (int ox, int oy, const int *clip)
   int w = app.edit_width, sw = lay_step_w (w, p->len), steps = p->len / GR_STEP;
   int row, st, play = local_step (), bar_st, beat_st;
   meter_steps (&bar_st, &beat_st);
-  for (row = 0; row < GR_DRUM_SOUNDS; row++)
+  drum_rows (0);
+  for (row = 0; row < ndrow; row++)
     {
       int top = oy - ED_HEAD_H - row * ED_DRUM_H, bot = top - ED_DRUM_H;
       if (!gfx_visible (clip, clip[0], bot, clip[2], top))
         continue;
       gfx_colour (row & 1 ? C_LANE_ALT : C_LANE);
       gfx_rect (clip[0], bot, clip[2], top);
-      gfx_colour (C_HEADER);
-      gfx_rect (ox, bot, ox + ED_LABEL_W, top);
-      gfx_text (ox + 16, bot + 18, gr_drum_name (row), C_TEXT, C_HEADER, 0);
+      {
+        /* Groove's own drums' names stand out; other keys are dimmer. */
+        int own = gr_gm_drum_note (gr_drum_voice (drow[row])) == drow[row];
+        gfx_colour (C_HEADER);
+        gfx_rect (ox, bot, ox + ED_LABEL_W, top);
+        char label[32];
+        if (all_keys || !own)
+          snprintf (label, sizeof label, "%3d  %s", drow[row], gr_drum_name (drow[row]));
+        else
+          snprintf (label, sizeof label, "%s", gr_drum_name (drow[row]));
+        gfx_text (ox + 16, bot + (ED_DRUM_H - 20) / 2, label, own ? C_TEXT : C_TEXT_DIM, C_HEADER, 0);
+      }
       for (st = 0; st < steps; st++)
         {
-          int x0 = ox + ED_LABEL_W + st * sw, k = gr_pattern_find_note (p, st * GR_STEP, row);
+          int x0 = ox + ED_LABEL_W + st * sw, k = step_note (p, st, drow[row]);
           unsigned col;
           if (!gfx_visible (clip, x0, bot, x0 + sw, top))
             continue;
@@ -393,8 +529,8 @@ static void paint_roll (int ox, int oy, const int *clip)
     {
       const gr_note *n = &p->notes[k];
       int x0, x1, top;
-      if (n->pitch < ED_LOW || n->pitch > ED_HIGH)
-        continue;
+      if (n->pitch > 127)
+        continue;                 /* (ED_LOW..ED_HIGH is all of MIDI's notes) */
       x0 = ox + lay_roll_x (w, p->len, n->tick);
       x1 = ox + lay_roll_x (w, p->len, n->tick + n->len);
       top = oy + lay_roll_y (n->pitch);
@@ -415,6 +551,130 @@ static void paint_roll (int ox, int oy, const int *clip)
     }
 }
 
+/* ---- the controller lane ---------------------------------------------------
+   Pinned to the bottom of the window (drawn at the visible bottom whatever
+   the scroll, like the header at the top). It shows one kind of controller
+   event in the part (lane_type: a CC number or GR_CTL_*): a bar where each
+   event is and its value held until the next. Select: a click puts one
+   event, a drag draws them over time; Adjust: erases. */
+#define LANE_RES (GR_STEP / 2)  /* drawing puts an event every 1/32 note */
+#define LANE_BTN_X1 470         /* the controller's name: a button for its menu */
+static int lane_type = 1;       /* Modulation to begin with */
+
+int editor_lane_type (void) { return lane_type; }
+
+void editor_set_lane (int type)
+{
+  if (type >= 0 && type < GR_CTL_TYPES)
+    lane_type = type;
+  if (app.edit_open)
+    app_redraw_all (app.w_edit);
+}
+
+/* How many events of a type the part has (for the lane's menu). */
+int editor_lane_count (int type)
+{
+  gr_pattern *p = pat ();
+  int k, n = 0;
+  if (p)
+    for (k = 0; k < p->nctls; k++)
+      n += p->ctls[k].type == type;
+  return n;
+}
+
+static int lane_plot_y0 (int ybot) { return ybot + 12; }
+static int lane_plot_y1 (int ybot) { return ybot + ED_LANE_H - ED_LANE_BAR - 8; }
+
+static int lane_y (int ybot, int v)
+{
+  int lo = gr_ctl_min (lane_type), hi = gr_ctl_max (lane_type);
+  return lane_plot_y0 (ybot) + (int) ((long) (v - lo) * (lane_plot_y1 (ybot) - lane_plot_y0 (ybot)) / (hi - lo));
+}
+
+static int lane_value (int ybot, int y)
+{
+  int lo = gr_ctl_min (lane_type), hi = gr_ctl_max (lane_type), h = lane_plot_y1 (ybot) - lane_plot_y0 (ybot);
+  int v = lo + (int) ((long) (y - lane_plot_y0 (ybot)) * (hi - lo) / h);
+  return v < lo ? lo : v > hi ? hi : v;
+}
+
+/* ox: the work area's origin on screen; ybot: the visible bottom. */
+static void paint_lane (int ox, int ybot, const int *clip)
+{
+  gr_pattern *p = pat ();
+  gr_track *t = trk ();
+  int w = app.edit_width, y1 = ybot + ED_LANE_H, k, x;
+  char label[48];
+  if (!gfx_visible (clip, clip[0], ybot, clip[2], y1))
+    return;
+  gfx_colour (0x26282D);
+  gfx_rect (clip[0], ybot, clip[2], y1);
+  gfx_colour (0x34363B);
+  gfx_rect (clip[0], y1 - ED_LANE_BAR, clip[2], y1);
+  gfx_colour (0x4A4E58);
+  gfx_rect (clip[0], y1 - 2, clip[2], y1);
+  if (!p || !t)
+    return;
+  snprintf (label, sizeof label, "%s", gr_ctl_name (lane_type));
+  gfx_colour (C_BUTTON);
+  gfx_round (ox + 16, y1 - ED_LANE_BAR + 8, ox + LANE_BTN_X1, y1 - 8, 8);
+  gfx_text (ox + 32, y1 - ED_LANE_BAR + 20, label, C_TEXT, C_BUTTON, 0);
+  gfx_colour (C_TEXT);
+  gfx_tri (ox + LANE_BTN_X1 - 40, y1 - 18, ox + LANE_BTN_X1 - 16, y1 - 18, ox + LANE_BTN_X1 - 28, y1 - 32);
+  gfx_text (ox + LANE_BTN_X1 + 24, y1 - ED_LANE_BAR + 20,
+            "Select: click for one event, drag to draw   Adjust: erase", C_TEXT_DIM, 0x34363B, 0);
+  /* The plot: beat lines, the middle for a centred controller, the events. */
+  {
+    int bar_st, beat_st, st, steps = p->len / GR_STEP, sw = lay_step_w (w, p->len);
+    meter_steps (&bar_st, &beat_st);
+    for (st = 0; st <= steps; st += beat_st)
+      {
+        x = ox + ED_LABEL_W + st * sw;
+        gfx_colour (st % bar_st ? 0x33363C : 0x44484F);
+        gfx_rect (x, ybot + 4, x + 2, y1 - ED_LANE_BAR - 4);
+      }
+  }
+  if (gr_ctl_min (lane_type) < 0 || lane_type == 10 || lane_type == 8)
+    {
+      int ym = lane_y (ybot, lane_type == GR_CTL_BEND ? 0 : 64);
+      gfx_colour (0x3A3D44);
+      gfx_rect (ox + ED_LABEL_W, ym, ox + ED_LABEL_W + lay_roll_x (w, p->len, p->len) - ED_LABEL_W, ym + 2);
+    }
+  {
+    char v0[8], v1[8];
+    snprintf (v1, sizeof v1, "%d", gr_ctl_max (lane_type));
+    snprintf (v0, sizeof v0, "%d", gr_ctl_min (lane_type));
+    gfx_text (ox + 16, lane_plot_y1 (ybot) - 20, v1, C_TEXT_DIM, 0x26282D, 0);
+    gfx_text (ox + 16, lane_plot_y0 (ybot), v0, C_TEXT_DIM, 0x26282D, 0);
+  }
+  for (k = 0; k < p->nctls; k++)
+    {
+      const gr_ctl *c = &p->ctls[k];
+      int j, nx, base, y, x0;
+      unsigned col = t->type == TRK_DRUMS ? C_DRUMS : C_INST;
+      if (c->type != lane_type)
+        continue;
+      for (j = k + 1; j < p->nctls && p->ctls[j].type != lane_type; j++)
+        ;
+      x0 = ox + lay_roll_x (w, p->len, c->tick);
+      nx = ox + lay_roll_x (w, p->len, j < p->nctls ? p->ctls[j].tick : p->len);
+      y = lane_y (ybot, c->value);
+      base = lane_y (ybot, gr_ctl_min (lane_type) < 0 ? 0 : gr_ctl_min (lane_type));
+      /* held until the next event: a line; the event itself: a bar */
+      gfx_colour (0x6E7480);
+      gfx_rect (x0, y - 1, nx, y + 1);
+      gfx_colour (col);
+      gfx_rect (x0, base < y ? base : y, x0 + 6, base < y ? y : base);
+      gfx_rect (x0 - 2, y - 3, x0 + 8, y + 3);
+      if (lane_type == GR_CTL_PROGRAM)
+        {
+          char n[8];
+          snprintf (n, sizeof n, "%d", c->value);
+          gfx_text (x0 + 10, y - 8, n, C_TEXT, 0x26282D, 0);
+        }
+    }
+}
+
 void editor_redraw (int *b)
 {
   int more;
@@ -432,6 +692,7 @@ void editor_redraw (int *b)
           else
             paint_roll (ox, oy, &b[7]);
         }
+      paint_lane (ox, b[2], &b[7]);     /* pinned: at the visible bottom */
       paint_head (ox, b[4], &b[7]);     /* pinned: at the visible top */
       head_scroll = b[6];
       _swix (Wimp_GetRectangle, _IN (1) | _OUT (0), b, &more);
@@ -452,6 +713,7 @@ static void to_work (int x, int y, int *wx, int *wy)
 
 static void edited (void)
 {
+  editor_changed ();
   app.unsaved = 1;
   app_redraw_all (app.w_edit);
   if (app.main_open)
@@ -461,9 +723,9 @@ static void edited (void)
 
 static void set_step (gr_pattern *p, int row, int step, int on, int vel)
 {
-  int k = gr_pattern_find_note (p, step * GR_STEP, row);
+  int k = step_note (p, step, drow[row]);
   if (on && k < 0)
-    gr_pattern_add_note (p, step * GR_STEP, GR_STEP, row, vel);
+    gr_pattern_add_note (p, step * GR_STEP, GR_STEP, drow[row], vel);
   else if (!on && k >= 0)
     gr_pattern_delete_note (p, k);
 }
@@ -479,12 +741,12 @@ static void drag_paint (int x, int y, int done)
   wy = -ED_HEAD_H - paint_row * ED_DRUM_H - 4;   /* stay on the row we started on */
   if (lay_grid_hit (app.edit_width, p->len, wx, wy, &row, &step))
     {
-      int had = gr_pattern_find_note (p, step * GR_STEP, row) >= 0;
+      int had = step_note (p, step, drow[row]) >= 0;
       if (had != paint_on)
         {
           set_step (p, row, step, paint_on, 100);
           if (paint_on)
-            gr_live_on (app.eng, reg ()->track, row, 100);
+            gr_live_on (app.eng, reg ()->track, drow[row], 100);
           edited ();
         }
     }
@@ -659,6 +921,12 @@ static void head_click (int *b, int wx)
       break;
   if (i == EB_COUNT || !t)
     return;
+  if (i == EB_KEYS)
+    {
+      if (t->type == TRK_DRUMS)
+        editor_all_keys (!all_keys);
+      return;
+    }
   if (i == EB_SOUND)
     {
       /* The Sound menu, under the button. */
@@ -671,25 +939,32 @@ static void head_click (int *b, int wx)
   if (!p)
     return;
   if (i == EB_CLEAR)
-    p->nnotes = 0;
+    p->nnotes = p->nctls = 0;
   else
     {
       int len = (i == EB_LEN1 ? 1 : i == EB_LEN2 ? 2 : 4) * region_bar (), k;
       /* Lengthening repeats what's there; shortening drops what's past the end. */
       if (len > p->len)
         {
-          int old = p->len, n = p->nnotes, rep;
+          int old = p->len, n = p->nnotes, nc = p->nctls, rep;
           p->len = len;
           for (rep = old; rep < len; rep += old)
-            for (k = 0; k < n; k++)
-              gr_pattern_add_note (p, p->notes[k].tick + rep, p->notes[k].len,
-                                   p->notes[k].pitch, p->notes[k].vel);
+            {
+              for (k = 0; k < n; k++)
+                gr_pattern_add_note (p, p->notes[k].tick + rep, p->notes[k].len,
+                                     p->notes[k].pitch, p->notes[k].vel);
+              for (k = 0; k < nc; k++)
+                gr_pattern_set_ctl (p, p->ctls[k].tick + rep, p->ctls[k].type, p->ctls[k].value);
+            }
         }
       else
         {
           for (k = p->nnotes - 1; k >= 0; k--)
             if (p->notes[k].tick >= len)
               gr_pattern_delete_note (p, k);
+          for (k = p->nctls - 1; k >= 0; k--)
+            if (p->ctls[k].tick >= len)
+              gr_pattern_delete_ctl (p, k);
           p->len = len;
         }
     }
@@ -713,6 +988,107 @@ static int shift_down (void)
   return r1 == 0xFF;
 }
 
+/* A point in the lane to a tick (on the 1/32 grid) and a value. */
+static int lane_at (int wx, int y, int ybot, int *tick, int *value)
+{
+  gr_pattern *p = pat ();
+  int t;
+  if (!p || wx < ED_LABEL_W)
+    return 0;
+  t = (int) ((long long) (wx - ED_LABEL_W) * GR_STEP / lay_step_w (app.edit_width, p->len));
+  if (t < 0 || t >= p->len)
+    return 0;
+  *tick = t / LANE_RES * LANE_RES;
+  *value = lane_value (ybot, y);
+  return 1;
+}
+
+static int lane_erasing, lane_last_tick, lane_last_value, lane_ybot;
+
+/* Erase this type's events in [t0, t1]. */
+static void lane_erase (gr_pattern *p, int t0, int t1)
+{
+  int k;
+  if (t0 > t1) { int z = t0; t0 = t1; t1 = z; }
+  for (k = p->nctls - 1; k >= 0; k--)
+    if (p->ctls[k].type == lane_type && p->ctls[k].tick >= t0 && p->ctls[k].tick < t1 + LANE_RES)
+      gr_pattern_delete_ctl (p, k);
+}
+
+/* Draw from the last point to this one: an event every 1/32 note, the
+   values on the straight line between. */
+static void lane_line (gr_pattern *p, int t1, int v1)
+{
+  int t0 = lane_last_tick, v0 = lane_last_value, t, step = t1 >= t0 ? LANE_RES : -LANE_RES;
+  for (t = t0; ; t += step)
+    {
+      int v = t1 == t0 ? v1 : v0 + (int) ((long) (v1 - v0) * (t - t0) / (t1 - t0));
+      if (gr_pattern_set_ctl (p, t, lane_type, v) < 0)
+        break;                      /* (full) */
+      if (t == t1)
+        break;
+    }
+}
+
+static void lane_drag (int x, int y, int done)
+{
+  gr_pattern *p = pat ();
+  int wx, wy, tick, value;
+  (void) done;
+  if (!p)
+    return;
+  to_work (x, y, &wx, &wy);
+  if (wx < ED_LABEL_W)
+    wx = ED_LABEL_W;
+  if (y < lane_ybot) y = lane_ybot;
+  if (!lane_at (wx, y, lane_ybot, &tick, &value))
+    {
+      tick = p->len - 1;          /* (dragged past the end) */
+      tick = tick / LANE_RES * LANE_RES;
+      value = lane_value (lane_ybot, y);
+    }
+  if (tick == lane_last_tick && value == lane_last_value)
+    return;
+  if (lane_erasing)
+    lane_erase (p, lane_last_tick, tick);
+  else
+    lane_line (p, tick, value);
+  lane_last_tick = tick;
+  lane_last_value = value;
+  edited ();
+}
+
+static void lane_click (int *b, int wx, int ybot)
+{
+  gr_pattern *p;
+  int tick, value;
+  if (!trk () || !pat ())
+    return;
+  if (b[1] >= ybot + ED_LANE_H - ED_LANE_BAR)
+    {
+      /* The top strip: the controller's name opens the menu of them. */
+      if (wx >= 16 && wx < LANE_BTN_X1)
+        {
+          int ox, oy;
+          app_window_origin (app.w_edit, &ox, &oy);
+          app_lane_menu (ox + 16, ybot + ED_LANE_H);
+        }
+      return;
+    }
+  if (!lane_at (wx, b[1], ybot, &tick, &value) || !(p = pat_for_edit ()))
+    return;
+  lane_erasing = b[2] == BUT_ADJUST;
+  if (lane_erasing)
+    lane_erase (p, tick, tick);
+  else
+    gr_pattern_set_ctl (p, tick, lane_type, value);
+  lane_last_tick = tick;
+  lane_last_value = value;
+  lane_ybot = ybot;
+  edited ();
+  app_start_drag (app.w_edit, lane_drag);
+}
+
 void editor_click (int *b)
 {
   gr_pattern *p;
@@ -733,6 +1109,11 @@ void editor_click (int *b)
         head_click (b, wx);
         return;
       }
+    if (b[1] < st[2] + ED_LANE_H)    /* the pinned controller lane, at the bottom */
+      {
+        lane_click (b, wx, st[2]);
+        return;
+      }
   }
   if (wy > -ED_HEAD_H)
     {
@@ -747,8 +1128,8 @@ void editor_click (int *b)
       if (wx < ED_LABEL_W)
         {
           row = (-ED_HEAD_H - wy) / ED_DRUM_H;
-          if (row >= 0 && row < GR_DRUM_SOUNDS)
-            gr_live_on (app.eng, reg ()->track, row, 110);   /* audition the sound */
+          if (row >= 0 && row < ndrow)
+            gr_live_on (app.eng, reg ()->track, drow[row], 110);   /* audition the sound */
           return;
         }
       p = pat_for_edit ();
@@ -756,20 +1137,20 @@ void editor_click (int *b)
         return;
       if (b[2] == BUT_ADJUST)
         {
-          int k = gr_pattern_find_note (p, step * GR_STEP, row);
+          int k = step_note (p, step, drow[row]);
           if (k >= 0)
             p->notes[k].vel = p->notes[k].vel >= 110 ? 80 : 127;
           else
             set_step (p, row, step, 1, 127);
-          gr_live_on (app.eng, reg ()->track, row, k >= 0 ? p->notes[k].vel : 127);
+          gr_live_on (app.eng, reg ()->track, drow[row], k >= 0 ? p->notes[k].vel : 127);
           edited ();
           return;
         }
       paint_row = row;
-      paint_on = gr_pattern_find_note (p, step * GR_STEP, row) < 0;
+      paint_on = step_note (p, step, drow[row]) < 0;
       set_step (p, row, step, paint_on, 100);
       if (paint_on)
-        gr_live_on (app.eng, reg ()->track, row, 100);
+        gr_live_on (app.eng, reg ()->track, drow[row], 100);
       edited ();
       app_start_drag (app.w_edit, drag_paint);
     }

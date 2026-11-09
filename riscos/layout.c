@@ -3,6 +3,9 @@
 #include "layout.h"
 
 int lay_drum_h = ED_DRUM_MIN;
+int lay_drum_rows = GR_DRUM_SOUNDS;
+int lay_label_w = ED_LABEL_KEYS;
+static int editor_h_fit = 0;    /* the height lay_fit_drum_rows last fitted */
 
 /* ---- arranger ------------------------------------------------------------ */
 
@@ -163,9 +166,10 @@ int lay_toolbar_hit (int x, int y)
 
 int lay_editor_height (gr_track_type t)
 {
+  /* (and room at the bottom for the controller lane pinned there) */
   if (t == TRK_DRUMS)
-    return ED_HEAD_H + GR_DRUM_SOUNDS * ED_DRUM_H;
-  return ED_HEAD_H + (ED_HIGH - ED_LOW + 1) * ED_KEY_H;
+    return ED_HEAD_H + lay_drum_rows * ED_DRUM_H + ED_LANE_H;
+  return ED_HEAD_H + (ED_HIGH - ED_LOW + 1) * ED_KEY_H + ED_LANE_H;
 }
 
 int lay_step_w (int width, int len)
@@ -184,7 +188,7 @@ int lay_grid_hit (int width, int len, int x, int y, int *row, int *step)
     return 0;
   r = (-ED_HEAD_H - y) / ED_DRUM_H;
   st = (x - ED_LABEL_W) / w;
-  if (r < 0 || r >= GR_DRUM_SOUNDS || st < 0 || st >= len / GR_STEP)
+  if (r < 0 || r >= lay_drum_rows || st < 0 || st >= len / GR_STEP)
     return 0;
   *row = r;
   *step = st;
@@ -294,9 +298,18 @@ lay_box lay_workspace (int sw, int sh, int which)
   return b;
 }
 
+/* Rows that fill the editor (a few rows big, more rows smaller); all 128
+   keys get small rows and a scroll bar. editor_h 0: the last height. */
 int lay_fit_drum_rows (int editor_h)
 {
-  int h = (editor_h - ED_HEAD_H) / GR_DRUM_SOUNDS;
+  int h;
+  if (editor_h > 0)
+    editor_h_fit = editor_h;
+  else
+    editor_h = editor_h_fit ? editor_h_fit : 8 * ED_DRUM_MIN + ED_HEAD_H + ED_LANE_H;
+  if (lay_drum_rows > 24)
+    return ED_DRUM_ALL_H;
+  h = (editor_h - ED_HEAD_H - ED_LANE_H) / lay_drum_rows;
   h &= ~3;                                       /* whole pixels at any eig */
   return h < ED_DRUM_MIN ? ED_DRUM_MIN : h > 120 ? 120 : h;
 }

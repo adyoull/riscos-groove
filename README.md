@@ -10,16 +10,19 @@ can also use a SoundFont's 128 General MIDI instruments and drum kits.
 
 ![Groove: three loops in a song, with the loop browser](docs/guide/images/loops-dropped.png)
 
-**Status: 0.2.3, an early version.** Tested on a Raspberry Pi 4 with RISC OS
+**Status: 0.3, an early version.** Tested on a Raspberry Pi 4 with RISC OS
 5.31, and in RISC OS 5.31-5 under emulation on Linux.
 
 ## What it does
 
 - **Loops**: 18 ready-made loops (drums, bass, keys and lead), played in
   your song's key. Drag them into the song and stretch them.
-- **Drums**: a step grid of eight drums and sixteen steps a bar, with accents.
-- **Notes**: a piano roll. Select several notes to move, copy, transpose or
-  make louder together.
+- **Drums**: a step grid of eight drums and sixteen steps a bar, with accents,
+  or all 128 MIDI drum keys with their General MIDI names.
+- **Notes**: a piano roll of all 128 MIDI notes. Select several notes to
+  move, copy, transpose or make louder together.
+- **Controllers**: a lane under the notes for modulation, volume, pan,
+  sustain, any CC, pitch bend, channel pressure and program changes.
 - **Musical typing**: play the computer keyboard like a piano, chords too,
   or a MIDI keyboard, with velocity and the sustain pedal: through Pete
   Everett's MIDI Support (Groove is a driver you connect to), or a MIDI
@@ -28,15 +31,17 @@ can also use a SoundFont's 128 General MIDI instruments and drum kits.
   keyboard or sound module on USB or a MIDI cable, or a software synth),
   through MIDI Support or a MIDI module's port, in time with the song;
   F10 steps through the MIDI out choices, shown in the window's title;
-  F11 sends the selected track, Shift-F11 the whole song.
+  F11 sends the selected track, Shift-F11 the whole song. Each track's MIDI
+  channel, bank and program can be set.
 - **Recording**: a bar of count-in, then what you play goes into a region,
   tidied to the nearest sixteenth; or merged into the region already there.
-- **Arranging**: move, stretch, split, copy and paste regions; up to 16
+- **Arranging**: move, stretch, split, copy and paste regions; up to 32
   tracks; rename, reorder and colour-coded tracks; Undo and Redo.
 - **Mixing**: volume, pan, mute and solo per track, a master volume, reverb
   and a limiter.
 - **Any time signature**, changing part-way through a song if you like.
-- **Files**: songs, WAV export, MIDI import and export, WAV import, and
+- **Files**: songs, WAV export, MIDI import and export (with channels,
+  banks, program changes and controllers), WAV import, and
   **Maestro music**: Groove plays RISC OS Maestro files the way Maestro
   does (clefs, key signatures, accidentals to the end of the bar, ties,
   dots, each channel's volume and stereo position, tempo and time
@@ -58,6 +63,10 @@ Notes selected in the piano roll, ready to move, copy, transpose or make
 louder together:
 
 ![Notes selected in the piano roll](docs/guide/images/note-selection.png)
+
+A modulation sweep drawn in the controller lane:
+
+![The controller lane](docs/guide/images/controller-lane.png)
 
 Gigue, one of the Maestro pieces that come with RISC OS, in Maestro and then
 dropped on Groove: a track for each channel, in 6/8, at Maestro's tempo:
@@ -91,7 +100,7 @@ keyboard:
 
 ## Installing
 
-1. Download `Groove-0.2.3.zip` from the release page and unzip it with SparkFS
+1. Download `Groove-0.3.zip` from the release page and unzip it with SparkFS
    or PackMan's unzip, so the files keep their RISC OS file types.
 2. Copy `!Groove` to wherever you keep your applications.
 3. For SoundFont sounds, install **SoftMIDI** from PackMan, and open the

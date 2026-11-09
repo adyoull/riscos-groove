@@ -1,5 +1,41 @@
 # Changelog
 
+## 0.3 (9 Nov 2026)
+
+Pete Everett's suggestions, and the rest of his report:
+
+- Drums: every note is a MIDI drum key (Kick 36, Snare 38 and so on).
+  The Editor's new All keys button shows all 128 keys, with their General
+  MIDI names; Kit rows shows the kit's eight, plus a row for any other key
+  the region uses. Groove's own kits play other keys on the nearest drum.
+- Piano roll: all 128 notes (C-1 to G9), was C1 to B7.
+- Controller lane, under the notes in the Editor: draw controller events
+  (modulation, breath, volume, pan, expression, sustain, any CC 0-127),
+  pitch bend, channel pressure and program changes. They're part of the
+  region's pattern: they move, copy, split and undo with it. They play on
+  MIDI out and SoundFont sounds, and starting part-way sends the settings
+  in force at that point first.
+- Track > MIDI channel (Auto, 1-16) and Track > Bank & program (Bank MSB,
+  Bank LSB, Program; empty for automatic). Used by MIDI out, SoundFont
+  sounds and MIDI export; saved with the song.
+- 32 tracks (was 16). Instrument tracks after the 30th with SoundFont
+  sounds play Groove's own nearest sound.
+- MIDI import keeps each part's channel, bank, later program changes and
+  its controllers (bends, sustain, modulation and so on), and all its
+  drum keys. MIDI export writes them back.
+- SoundFont sounds can play 96 voices at once (was 48), 48 in the second
+  player (was 24), as SoftMIDI does, so busy songs and the sustain pedal
+  don't cut notes off.
+- MIDI out: each channel's settings (Reset All Controllers, bank,
+  program, volume, pan) are sent every time the song starts playing, not
+  only the first time after choosing MIDI out.
+- Importing a long MIDI file no longer says "The song is full" so soon: a
+  song now holds 1024 regions (was 256).
+- Fixes: undoing a note took it away but left it counted as selected;
+  drum rows didn't fit the Editor when it first opened.
+- Song files are now GROOVE 2 (track MIDI settings, controller lines,
+  drum keys). GROOVE 1 songs still open. WimpSlot 10 MB.
+
 ## 0.2.3 (4 Nov 2026)
 
 - F10 steps through the MIDI out choices: Off, MIDI Support, Port 1-4

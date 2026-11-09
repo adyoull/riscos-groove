@@ -103,8 +103,8 @@ static void note_on (int i)
       static const int drum_of[NKEYS] = { 0, -1, 1, -1, 2, 3, -1, 4, -1, 5, -1, 6, 7, -1, -1, -1, -1 };
       if (drum_of[i] < 0)
         return;
-      gr_live_on (app.eng, t, drum_of[i], velocity);
-      held_pitch[i] = drum_of[i];
+      gr_live_on (app.eng, t, gr_drum_kit_key (drum_of[i]), velocity);
+      held_pitch[i] = gr_drum_kit_key (drum_of[i]);
     }
   else
     {

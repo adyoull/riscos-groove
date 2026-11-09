@@ -394,8 +394,12 @@ static void test_gm_names (void)
   CHECK (!strcmp (gr_gm_family_name (4), "Bass") && !strcmp (gr_gm_family_name (13), "World"),
          "and their families (GM's \"Ethnic\" called World)");
   CHECK (gr_gm_kit (4) == GM_KIT_808 && !strcmp (gr_gm_kit_name (GM_KIT_808), "808 Kit"), "kit names");
-  CHECK (gr_gm_drum_note (DR_KICK) == 36 && gr_gm_drum_note (DR_SNARE) == 38
-         && gr_gm_drum_note (DR_CHAT) == 42, "the step grid's rows are GM drum keys");
+  CHECK (gr_gm_drum_note (GV_KICK) == DR_KICK && DR_KICK == 36 && gr_gm_drum_note (GV_SNARE) == 38
+         && gr_gm_drum_note (GV_CHAT) == 42, "Groove's drums are GM drum keys");
+  CHECK (gr_drum_voice (36) == GV_KICK && gr_drum_voice (40) == GV_SNARE && gr_drum_voice (49) == GV_PERC,
+         "any drum key plays one of Groove's own drums");
+  CHECK (!strcmp (gr_drum_name (DR_KICK), "Kick") && !strcmp (gr_drum_name (49), "Crash Cymbal 1")
+         && !strcmp (gr_drum_name (90), "F#6 90"), "every drum key has a name");
   gm_song (&s, 0, -1);
   CHECK (!strcmp (gr_sound_name (&s.tracks[0]), "Acoustic Grand Piano")
          && !strcmp (gr_sound_name (&s.tracks[1]), "Studio Kit"), "a track's sound name, either kind");
@@ -700,7 +704,7 @@ static void test_midi (void)
       for (i = 0; i < 16; i++)
         {
           int ch;
-          for (ch = 0; ch < 3; ch++)
+          for (ch = 0; ch < 12; ch++)
             {
               unsigned char ev[8] = { 0, (unsigned char) (0x90 | ch), 60, 100, 24, (unsigned char) (0x80 | ch), 60, 0 };
               fwrite (ev, 1, 8, g);
@@ -1133,7 +1137,7 @@ static void test_maestro (const char *dir)
   CHECK (k == 1 && n[0][0] == 0 && n[0][1] == 288 && n[0][2] == 50,
          "bass clef middle line: D3; tied over the bar line it sounds once, for both notes");
   k = track_notes (&s, t7, n, 64);
-  CHECK (s.tracks[t7].type == TRK_DRUMS && k == 1 && n[0][2] == 2, "Percussion-Noise on the percussion stave: a hi-hat");
+  CHECK (s.tracks[t7].type == TRK_DRUMS && k == 1 && n[0][2] == DR_CHAT, "Percussion-Noise on the percussion stave: a hi-hat (key 42)");
   CHECK (s.tracks[t].gm == 24 && s.tracks[t4].gm == 6, "StringLib voices get plucked SoundFont sounds");
   CHECK (s.tracks[t].vol > 0.79f && s.tracks[t4].vol < 0.8f * 0.53f && s.tracks[t4].vol > 0.8f * 0.51f,
          "Maestro volume 6 is 15 log steps (about 5.6 dB) below 7");
@@ -1200,6 +1204,332 @@ static int mo_find (unsigned cmd, unsigned mask)
   return -1;
 }
 
+/* A long 16-part MIDI file (Pete Everett's "Song full" on import): 16
+   tracks of 160 bars, a crotchet every beat, exported and imported back. */
+/* Drum notes are MIDI keys (0.3): songs from before convert, MIDI files
+   keep every key, and any key plays. */
+static void test_drum_keys (void)
+{
+  static gr_song s, b;
+  FILE *f = fopen ("/tmp/groove_v1.song", "w");
+  int t, p, k, n49 = 0, i;
+  const char *why = NULL;
+  gr_engine *e;
+  float peak;
+  fputs ("GROOVE 1\ntempo 120\nkey 0\nbars 4\nloop 0 0 0\nmetronome 0\nmaster 0.80\n"
+         "track 0 0 \"Drums\" 0.80 0.00 0.08 0 0 -1\n"
+         "track 1 0 \"Keys\" 0.80 0.00 0.08 0 0 -1\n"
+         "pattern 0 \"Beat\" 384\nn 0 24 0 120\nn 96 24 1 100\nn 192 24 7 90\nend\n"
+         "pattern 1 \"Tune\" 384\nn 0 96 1 100\nend\n"
+         "region 0 0 384 0 -1 0\nregion 1 0 384 1 -1 0\n", f);
+  fclose (f);
+  gr_song_init (&s);
+  CHECK (gr_song_load (&s, "/tmp/groove_v1.song") == 0, "a song from before 0.3 loads");
+  p = s.regions[0].pattern;
+  CHECK (s.patterns[p].nnotes == 3 && s.patterns[p].notes[0].pitch == DR_KICK
+         && s.patterns[p].notes[1].pitch == DR_SNARE && s.patterns[p].notes[2].pitch == DR_PERC,
+         "its drum rows become MIDI keys (kick 36, snare 38, cowbell 56)");
+  CHECK (s.patterns[s.regions[1].pattern].notes[0].pitch == 1, "an instrument's notes stay as they were");
+  CHECK (gr_song_save (&s, "/tmp/groove_v2.song") == 0 && gr_song_load (&b, "/tmp/groove_v2.song") == 0
+         && b.patterns[b.regions[0].pattern].notes[0].pitch == DR_KICK, "saved again (GROOVE 2), they load as keys");
+  gr_song_free (&b);
+  gr_song_free (&s);
+
+  /* Any key: a crash cymbal (49) on a drum track, through a MIDI file. */
+  gr_song_init (&s);
+  t = gr_track_add (&s, TRK_DRUMS, "Drums", KIT_STUDIO);
+  p = gr_pattern_new (&s, "P", GR_BAR);
+  gr_pattern_add_note (&s.patterns[p], 0, GR_STEP, 49, 110);
+  gr_pattern_add_note (&s.patterns[p], GR_PPQ, GR_STEP, 27, 100);
+  gr_pattern_add_note (&s.patterns[p], 2 * GR_PPQ, GR_STEP, DR_KICK, 100);
+  gr_region_add (&s, t, 0, GR_BAR, p);
+  CHECK (gr_midi_export (&s, "/tmp/groove_keys.mid") == 0, "drum keys export");
+  gr_song_init (&b);
+  gr_midi_import (&b, "/tmp/groove_keys.mid", 0, &why);
+  for (i = 0; i < GR_MAX_REGIONS; i++)
+    if (b.regions[i].used)
+      for (k = 0; k < b.patterns[b.regions[i].pattern].nnotes; k++)
+        {
+          int key = b.patterns[b.regions[i].pattern].notes[k].pitch;
+          n49 += key == 49 ? 1 : key == 27 ? 10 : key == 36 ? 100 : 1000;
+        }
+  CHECK (n49 == 111, "and import as the same keys (49 crash, 27, 36 kick), not the nearest of eight");
+  gr_song_free (&b);
+  e = gr_engine_new (&s);
+  gr_play (e);
+  peak = render_peak (e, GR_RATE / 4);
+  CHECK (peak > 0.02f, "a key Groove has no drum of its own for plays the nearest (a crash: the cowbell)");
+  gr_engine_free (e);
+  gr_song_free (&s);
+}
+
+/* A track's own MIDI channel, Bank Select and program (Pete Everett). */
+static void test_track_midi (void)
+{
+  static gr_song s, b;
+  gr_engine *e;
+  int t, p, i, cc0 = -1, cc32 = -1, pc = -1, on = -1;
+  const char *why = NULL;
+  gr_song_init (&s);
+  t = gr_track_add (&s, TRK_INST, "Synth", PATCH_PAD);
+  CHECK (s.tracks[t].channel == -1 && s.tracks[t].bank_msb == -1 && s.tracks[t].program == -1,
+         "a new track's channel, bank and program are automatic");
+  s.tracks[t].channel = 4;
+  s.tracks[t].bank_msb = 1;
+  s.tracks[t].bank_lsb = 2;
+  s.tracks[t].program = 50;
+  s.tracks[t].midi_out = 1;
+  p = gr_pattern_new (&s, "P", GR_BAR);
+  gr_pattern_add_note (&s.patterns[p], 0, GR_PPQ, 60, 100);
+  gr_region_add (&s, t, 0, GR_BAR, p);
+  e = gr_engine_new (&s);
+  mo_n = 0;
+  gr_engine_set_midi_out (e, mo_capture, NULL);
+  gr_play (e);
+  render_peak (e, GR_RATE / 4);
+  for (i = 0; i < mo_n; i++)
+    {
+      unsigned c = mo_log[i].cmd & 0xFFFFFF;
+      if (c == (0xB4u | 0 << 8 | 1 << 16)) cc0 = i;
+      if (c == (0xB4u | 32 << 8 | 2 << 16)) cc32 = i;
+      if ((c & 0xFFFF) == (0xC4u | 50 << 8)) pc = i;
+      if ((c & 0xFFFF) == (0x94u | 60 << 8)) on = i;
+    }
+  CHECK (cc0 >= 0 && cc32 > cc0 && pc > cc32 && on > pc,
+         "MIDI out: on the track's channel (5), Bank Select MSB and LSB, then its program, then the note");
+  gr_engine_free (e);
+  CHECK (gr_midi_export (&s, "/tmp/groove_chan.mid") == 0, "it exports");
+  gr_song_init (&b);
+  gr_midi_import (&b, "/tmp/groove_chan.mid", 0, &why);
+  CHECK (b.ntracks == 1 && b.tracks[0].channel == 4 && b.tracks[0].bank_msb == 1 && b.tracks[0].bank_lsb == 2
+         && b.tracks[0].gm == 50, "and imports with the same channel, bank and program");
+  CHECK (gr_song_save (&s, "/tmp/groove_chan.song") == 0, "the song saves");
+  gr_song_free (&b);
+  gr_song_init (&b);
+  CHECK (gr_song_load (&b, "/tmp/groove_chan.song") == 0 && b.tracks[0].channel == 4 && b.tracks[0].bank_msb == 1
+         && b.tracks[0].bank_lsb == 2 && b.tracks[0].program == 50, "and loads with them");
+  gr_song_free (&b);
+  gr_song_free (&s);
+}
+
+/* Controller events (Pete Everett: controllers, program changes after the
+   first, and a lane to edit them). */
+static void test_controllers (void)
+{
+  static gr_song s, b;
+  gr_engine *e;
+  gr_history *h;
+  int t, p, i, k, cc1 = -1, reset = -1, prog = -1, pc2 = -1, on2 = -1, bend = -1;
+  const char *why = NULL;
+  gr_song_init (&s);
+  s.tempo = 120;
+  t = gr_track_add (&s, TRK_INST, "Lead", PATCH_LEAD);
+  p = gr_pattern_new (&s, "P", GR_BAR);
+  gr_pattern_add_note (&s.patterns[p], 0, GR_PPQ, 60, 100);
+  gr_pattern_add_note (&s.patterns[p], 2 * GR_PPQ, GR_PPQ, 62, 100);
+  CHECK (gr_pattern_set_ctl (&s.patterns[p], 0, 1, 90) == 0, "a controller event goes in a pattern");
+  gr_pattern_set_ctl (&s.patterns[p], 2 * GR_PPQ, GR_CTL_PROGRAM, 40);
+  gr_pattern_set_ctl (&s.patterns[p], GR_PPQ, GR_CTL_BEND, 4096);
+  gr_pattern_set_ctl (&s.patterns[p], GR_PPQ, GR_CTL_BEND, 2000);
+  CHECK (s.patterns[p].nctls == 3 && s.patterns[p].ctls[1].value == 2000 && s.patterns[p].ctls[2].type == GR_CTL_PROGRAM,
+         "kept in time order, one of a type at a tick (the newer replaces it)");
+  CHECK (gr_ctl_value_at (&s.patterns[p], GR_PPQ + 10, GR_CTL_BEND, 0) == 2000
+         && gr_ctl_value_at (&s.patterns[p], 10, GR_CTL_BEND, 0) == 0, "the value in force at a time");
+  CHECK (gr_pattern_set_ctl (&s.patterns[p], 0, GR_CTL_BEND, 99999) >= 0
+         && gr_ctl_value_at (&s.patterns[p], 0, GR_CTL_BEND, 0) == 8191, "values are kept in range");
+  gr_pattern_delete_ctl (&s.patterns[p], gr_pattern_find_ctl (&s.patterns[p], 0, GR_CTL_BEND));
+  CHECK (!strcmp (gr_ctl_name (1), "Modulation (CC 1)") && !strcmp (gr_ctl_name (GR_CTL_BEND), "Pitch bend")
+         && !strcmp (gr_ctl_name (20), "CC 20"), "controllers have names");
+  gr_region_add (&s, t, 0, GR_BAR, p);
+  s.tracks[t].midi_out = 1;
+
+  e = gr_engine_new (&s);
+  gr_engine_set_midi_out (e, mo_capture, NULL);
+  mo_n = 0;
+  gr_play (e);
+  render_peak (e, GR_RATE * 3 / 2);
+  for (i = 0; i < mo_n; i++)
+    {
+      unsigned c = mo_log[i].cmd;
+      if ((c & 0xFFFF) == (0xB0u | 121 << 8) && reset < 0) reset = i;
+      if ((c & 0xFF) == 0xC0 && prog < 0) prog = i;
+      if ((c & 0xFFFFFF) == (0xB0u | 1 << 8 | 90 << 16)) cc1 = i;
+      if ((c & 0xFFFFFF) == (0xE0u | ((2000 + 8192) & 127) << 8 | ((2000 + 8192) >> 7) << 16)) bend = i;
+      if (c == (0x020000C0u | 40 << 8)) pc2 = i;
+      if ((c & 0xFFFF) == (0x90u | 62 << 8)) on2 = i;
+    }
+  CHECK (reset >= 0 && prog > reset && cc1 > prog,
+         "MIDI out: Reset All Controllers, the track's program, then the pattern's controller at its time");
+  CHECK (bend > cc1 && (int) mo_log[bend].frame - (int) mo_log[cc1].frame > 20000,
+         "pitch bend half a second later, as two 7-bit halves");
+  CHECK (pc2 > bend && on2 > pc2, "the program change on beat 3 comes before the note that starts with it");
+  {
+    int again = 0;
+    for (i = pc2 + 1; i < mo_n; i++)
+      if ((mo_log[i].cmd & 0xFF) == 0xC0)
+        again = 1;
+    CHECK (!again, "and the track's own program isn't sent again to undo it");
+  }
+  gr_stop (e);
+  /* Starting at beat 2: the controllers in force there go out first. */
+  mo_n = 0;
+  gr_locate (e, GR_PPQ + 48);
+  gr_play (e);
+  render_peak (e, GR_RATE / 20);
+  cc1 = bend = -1;
+  for (i = 0; i < mo_n; i++)
+    {
+      if ((mo_log[i].cmd & 0xFFFFFF) == (0xB0u | 1 << 8 | 90 << 16)) cc1 = i;
+      if ((mo_log[i].cmd & 0xFF) == 0xE0) bend = i;
+    }
+  CHECK (cc1 >= 0 && bend >= 0, "starting part-way, the controllers in force there are sent (chased)");
+  gr_stop (e);
+  gr_engine_free (e);
+
+  /* Saved, Undo, split. */
+  CHECK (gr_song_save (&s, "/tmp/groove_ctl.song") == 0 && gr_song_load (&b, "/tmp/groove_ctl.song") == 0
+         && b.patterns[b.regions[0].pattern].nctls == 3
+         && b.patterns[b.regions[0].pattern].ctls[2].type == GR_CTL_PROGRAM, "controllers are saved in songs");
+  gr_song_free (&b);
+  h = gr_history_new (16, 1 << 20);
+  gr_history_reset (h, &s);
+  gr_pattern_set_ctl (&s.patterns[p], 3 * GR_PPQ, 7, 50);
+  gr_history_note (h, &s);
+  gr_history_undo (h, &s);
+  CHECK (s.patterns[s.regions[0].pattern].nctls == 3, "Undo takes a controller edit back");
+  gr_history_free (h);
+  k = gr_region_split (&s, 0, GR_PPQ + GR_PPQ / 2);
+  CHECK (k >= 0 && s.patterns[s.regions[k].pattern].nctls == 3
+         && gr_pattern_find_ctl (&s.patterns[s.regions[k].pattern], 2 * GR_PPQ - (GR_PPQ + GR_PPQ / 2), GR_CTL_PROGRAM) >= 0,
+         "a split region's second half keeps the controllers, in their places");
+
+  /* A MIDI file: later program changes, controllers and bends come in. */
+  gr_song_free (&s);
+  gr_song_init (&s);
+  t = gr_track_add (&s, TRK_INST, "Lead", PATCH_LEAD);
+  p = gr_pattern_new (&s, "P", 2 * GR_BAR);
+  gr_pattern_add_note (&s.patterns[p], 0, GR_PPQ, 60, 100);
+  gr_pattern_add_note (&s.patterns[p], GR_BAR + GR_PPQ, GR_PPQ, 64, 100);
+  gr_pattern_set_ctl (&s.patterns[p], GR_BAR, GR_CTL_PROGRAM, 81);
+  gr_pattern_set_ctl (&s.patterns[p], 10, 11, 70);
+  gr_pattern_set_ctl (&s.patterns[p], 20, GR_CTL_BEND, -3000);
+  gr_pattern_set_ctl (&s.patterns[p], 30, GR_CTL_PRESSURE, 33);
+  gr_region_add (&s, t, 0, 2 * GR_BAR, p);
+  s.tracks[t].gm = 5;
+  CHECK (gr_midi_export (&s, "/tmp/groove_ctl.mid") == 0, "a song with controllers exports as MIDI");
+  gr_song_init (&b);
+  gr_midi_import (&b, "/tmp/groove_ctl.mid", 0, &why);
+  {
+    int got = 0;
+    for (i = 0; i < GR_MAX_REGIONS; i++)
+      if (b.regions[i].used)
+        {
+          const gr_pattern *q = &b.patterns[b.regions[i].pattern];
+          int at = b.regions[i].start;
+          for (k = 0; k < q->nctls; k++)
+            {
+              const gr_ctl *c = &q->ctls[k];
+              if (c->type == GR_CTL_PROGRAM && c->value == 81 && at + c->tick == GR_BAR) got |= 1;
+              if (c->type == 11 && c->value == 70) got |= 2;
+              if (c->type == GR_CTL_BEND && c->value == -3000) got |= 4;
+              if (c->type == GR_CTL_PRESSURE && c->value == 33) got |= 8;
+            }
+        }
+    CHECK (b.ntracks == 1 && b.tracks[0].gm == 5 && got == 15,
+           "and imports with its later program change, expression, pitch bend and pressure (not just the first program)");
+  }
+  gr_song_free (&b);
+  gr_song_free (&s);
+}
+
+/* Controllers on a SoundFont sound: a pitch bend raises the note. */
+static double gm_freq (int bend)
+{
+  static gr_song s;
+  static float l[GR_RATE], r[GR_RATE];
+  gr_engine *e;
+  int t, p, i, cross = 0, first = -1, last = -1;
+  gr_song_init (&s);
+  s.tempo = 60;
+  t = gr_track_add (&s, TRK_INST, "Lead", PATCH_LEAD);
+  s.tracks[t].gm = 80;                       /* Square Lead */
+  p = gr_pattern_new (&s, "P", GR_BAR);
+  gr_pattern_add_note (&s.patterns[p], 0, GR_BAR, 57, 100);   /* A3, 220 Hz */
+  if (bend)
+    gr_pattern_set_ctl (&s.patterns[p], 0, GR_CTL_BEND, bend);
+  gr_region_add (&s, t, 0, GR_BAR, p);
+  e = gr_engine_new (&s);
+  gr_play (e);
+  for (i = 0; i < GR_RATE; i += 512)
+    gr_render (e, l + i, r + i, GR_RATE - i < 512 ? GR_RATE - i : 512);
+  gr_engine_free (e);
+  gr_song_free (&s);
+  /* The period: the lag (100-600 Hz) where the sound best matches itself. */
+  {
+    int lag, best = 0;
+    double most = -1e30;
+    const float *x = l + GR_RATE / 4;
+    (void) cross; (void) first; (void) last;
+    for (lag = GR_RATE / 600; lag <= GR_RATE / 100; lag++)
+      {
+        double sum = 0;
+        for (i = 0; i < 8192; i++)
+          sum += (double) x[i] * x[i + lag];
+        if (sum > most)
+          {
+            most = sum;
+            best = lag;
+          }
+      }
+    return best ? (double) GR_RATE / best : 0;
+  }
+}
+
+static void test_gm_controllers (const char *sf)
+{
+  double f0, f1;
+  if (!gr_gm_ready () && gr_gm_load (sf) < 0)
+    return;
+  f0 = gm_freq (0);
+  f1 = gm_freq (8191);
+  printf ("  SoundFont A3: %.1f Hz, bent up: %.1f Hz\n", f0, f1);
+  CHECK (f0 > 210 && f0 < 230 && f1 > 240 && f1 < 252,
+         "a pitch bend event bends a SoundFont note (+2 semitones: 220 Hz to about 247)");
+}
+
+static void test_long_import (void)
+{
+  static gr_song s, b;
+  int t, bar, total = 0, n = 0, i;
+  const char *why = NULL;
+  gr_song_init (&s);
+  s.tempo = 120;
+  for (t = 0; t < 16; t++)
+    {
+      if (gr_track_add (&s, t == 9 ? TRK_DRUMS : TRK_INST, "Part", t == 9 ? KIT_STUDIO : PATCH_EPIANO) < 0)
+        break;
+    }
+  for (t = 0; t < s.ntracks; t++)
+    for (bar = 0; bar < 160; bar += 8)
+      {
+        int p = gr_pattern_new (&s, "P", 8 * GR_BAR), k;
+        for (k = 0; k < 32; k++)
+          gr_pattern_add_note (&s.patterns[p], k * GR_PPQ, GR_PPQ / 2, s.tracks[t].type == TRK_DRUMS ? DR_KICK : 60 + t, 100);
+        gr_region_add (&s, t, bar * GR_BAR, 8 * GR_BAR, p);
+        total += 32;
+      }
+  CHECK (gr_midi_export (&s, "/tmp/groove_long.mid") == 0, "a long 16-part song exports as MIDI");
+  gr_song_init (&b);
+  CHECK (gr_midi_import (&b, "/tmp/groove_long.mid", 0, &why) == 16 && why == NULL,
+         "and imports, all 16 parts, without \"The song is full\"");
+  for (i = 0; i < GR_MAX_REGIONS; i++)
+    if (b.regions[i].used)
+      n += b.patterns[b.regions[i].pattern].nnotes;
+  CHECK (n == total, "with every note");
+  gr_song_free (&b);
+  gr_song_free (&s);
+}
+
 static void test_midi_out (void)
 {
   static gr_song s, b;
@@ -1259,13 +1589,24 @@ static void test_midi_out (void)
   s.tracks[d].midi_out = 1;
   mo_n = 0;
   gr_live_on (e, d, DR_SNARE, 100);
-  CHECK (mo_find (0x99 | (unsigned) gr_gm_drum_note (DR_SNARE) << 8, 0xFFFF) >= 0,
+  CHECK (mo_find (0x99 | (unsigned) DR_SNARE << 8, 0xFFFF) >= 0,
          "drum tracks play on channel 10 with General MIDI drum keys");
   CHECK (mo_find (0xC9, 0xFF) >= 0, "with a kit program sent first");
   mo_n = 0;
   gr_stop (e);
   CHECK (mo_find (0xB0 | 123 << 8, 0xFFFF) >= 0 && mo_find (0xB9 | 123 << 8, 0xFFFF) >= 0,
          "stopping sends All Notes Off on the channels used");
+  /* Playing again sends every channel's settings again (Pete Everett: they
+     only went the first time). */
+  mo_n = 0;
+  gr_locate (e, 0);
+  gr_play (e);
+  render_peak (e, GR_RATE / 10);
+  CHECK (mo_find (0x020000C0u | (unsigned) gr_patch_program (PATCH_EPIANO) << 8, 0xFFFFFFFF) >= 0
+         && mo_find (0x030000B0u | 7 << 8 | 64 << 16, 0xFFFFFFFF) >= 0
+         && mo_find (0x030000B0u | 10 << 8 | 127 << 16, 0xFFFFFFFF) >= 0,
+         "playing again sends the program, volume and pan again");
+  gr_stop (e);
   /* Mute: the channel's volume goes to 0 and no notes go out. */
   s.tracks[k].mute = 1;
   mo_n = 0;
@@ -1297,7 +1638,7 @@ static void test_sixteen (const char *sf)
   const char *why;
   int t, n, p;
   gr_song_init (&s);
-  for (t = 0; t < GR_MAX_TRACKS; t++)
+  for (t = 0; t < 16; t++)
     {
       int k = gr_track_add (&s, t == 3 ? TRK_DRUMS : TRK_INST, "T", PATCH_EPIANO);
       if (k < 0) break;
@@ -1306,7 +1647,19 @@ static void test_sixteen (const char *sf)
       gr_pattern_add_note (&s.patterns[p], 0, GR_PPQ, t == 3 ? 0 : 48 + t, 100);
       gr_region_add (&s, k, 0, GR_BAR, p);
     }
-  CHECK (s.ntracks == 16 && gr_track_add (&s, TRK_INST, "17", 0) < 0, "a song holds 16 tracks, and no more");
+  CHECK (s.ntracks == 16, "sixteen tracks");
+  {
+    static gr_song big;
+    gr_song_init (&big);
+    for (t = 0; t < 40; t++)
+      gr_track_add (&big, TRK_INST, "T", PATCH_EPIANO);
+    CHECK (big.ntracks == 32 && GR_MAX_TRACKS == 32, "a song holds 32 tracks (Pete Everett: more than 16), and no more");
+    CHECK (gr_track_channel (&big, 31) == 15 && gr_track_channel (&big, 8) == 8 && gr_track_channel (&big, 9) == 10,
+           "automatic channels skip 10 for drums; from the 16th instrument track on they share channel 16");
+    big.tracks[20].channel = 4;
+    CHECK (gr_track_channel (&big, 20) == 4, "a track can have a channel of its own");
+    gr_song_free (&big);
+  }
   CHECK (!gr_gm_need_second (&s), "with a drum track among them, one SoundFont player is enough");
   CHECK (gr_midi_export (&s, "/tmp/groove_16.mid") == 0, "16 tracks export as MIDI");
   gr_song_init (&b);
@@ -1363,8 +1716,14 @@ int main (int argc, char **argv)
   test_gm_fallback ();
   test_sixteen (getenv ("GROOVE_TEST_SOUNDFONT"));
   test_midi_out ();
+  test_long_import ();
+  test_drum_keys ();
+  test_track_midi ();
+  test_controllers ();
   if (getenv ("GROOVE_TEST_SOUNDFONT") && *getenv ("GROOVE_TEST_SOUNDFONT"))
     test_gm_play (getenv ("GROOVE_TEST_SOUNDFONT"));
+  if (getenv ("GROOVE_TEST_SOUNDFONT") && *getenv ("GROOVE_TEST_SOUNDFONT"))
+    test_gm_controllers (getenv ("GROOVE_TEST_SOUNDFONT"));
   else
     printf ("SKIP SoundFont playback: set GROOVE_TEST_SOUNDFONT (make test does)\n");
   gr_gm_unload ();

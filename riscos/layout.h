@@ -56,13 +56,20 @@ int lay_toolbar_hit (int x, int y);                /* TB_* or -1 */
 
 /* ---- the editor -------------------------------------------------------- */
 #define ED_HEAD_H  56           /* the strip with the region's name and sound */
-#define ED_LABEL_W 140          /* drum names / piano keys */
+#define ED_LABEL_W lay_label_w  /* drum names ("49 Crash Cymbal 1") / piano keys */
+#define ED_LABEL_DRUMS 384
+#define ED_LABEL_KEYS  140
+extern int lay_label_w;         /* the editor sets it for the track it shows */
 #define ED_DRUM_H  lay_drum_h  /* a step-grid row: grows to fill the editor */
 #define ED_DRUM_MIN 56
+#define ED_DRUM_ALL_H 32        /* rows when all 128 drum keys are shown */
 extern int lay_drum_h;
+extern int lay_drum_rows;       /* rows in the step grid (the editor sets it) */
 #define ED_KEY_H   20           /* a piano-roll row */
-#define ED_LOW     24           /* lowest note shown (C1) */
-#define ED_HIGH    107          /* highest (B7) */
+#define ED_LANE_H  240          /* the controller lane, pinned to the bottom */
+#define ED_LANE_BAR 48          /* its top strip: the controller's name */
+#define ED_LOW     0            /* lowest note shown (C-1) */
+#define ED_HIGH    127          /* highest (G9): all of MIDI's notes */
 
 int lay_editor_height (gr_track_type t);
 int lay_step_w (int width, int len_ticks);         /* grid column width, >= 8 */

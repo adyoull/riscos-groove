@@ -148,6 +148,7 @@ int gr_track_add (gr_song *s, gr_track_type t, const char *name, int patch)
   tr->type = t;
   tr->patch = patch;
   tr->gm = -1;
+  tr->channel = tr->bank_msb = tr->bank_lsb = tr->program = -1;
   tr->vol = 0.8f;
   tr->pan = 0.0f;
   tr->reverb = t == TRK_DRUMS ? 0.08f : 0.18f;
@@ -214,6 +215,103 @@ int gr_pattern_new (gr_song *s, const char *name, int len)
         return i;
       }
   return -1;
+}
+
+/* ---- controller events ---------------------------------------------------- */
+
+int gr_ctl_min (int type) { return type == GR_CTL_BEND ? -8192 : 0; }
+int gr_ctl_max (int type) { return type == GR_CTL_BEND ? 8191 : 127; }
+
+int gr_ctl_default (int type)
+{
+  switch (type)
+    {
+    case 7: return 100;                  /* volume */
+    case 8: case 10: return 64;          /* balance, pan: the middle */
+    case 11: return 127;                 /* expression */
+    case GR_CTL_BEND: return 0;
+    default: return 0;
+    }
+}
+
+const char *gr_ctl_name (int type)
+{
+  static char other[16];
+  switch (type)
+    {
+    case 1: return "Modulation (CC 1)";
+    case 2: return "Breath (CC 2)";
+    case 4: return "Foot (CC 4)";
+    case 5: return "Portamento time (CC 5)";
+    case 7: return "Volume (CC 7)";
+    case 8: return "Balance (CC 8)";
+    case 10: return "Pan (CC 10)";
+    case 11: return "Expression (CC 11)";
+    case 64: return "Sustain (CC 64)";
+    case 65: return "Portamento (CC 65)";
+    case 66: return "Sostenuto (CC 66)";
+    case 67: return "Soft pedal (CC 67)";
+    case 71: return "Resonance (CC 71)";
+    case 74: return "Brightness (CC 74)";
+    case 91: return "Reverb (CC 91)";
+    case 93: return "Chorus (CC 93)";
+    case GR_CTL_PROGRAM: return "Program change";
+    case GR_CTL_BEND: return "Pitch bend";
+    case GR_CTL_PRESSURE: return "Channel pressure";
+    }
+  snprintf (other, sizeof other, "CC %d", type & 127);
+  return other;
+}
+
+int gr_pattern_find_ctl (const gr_pattern *p, int tick, int type)
+{
+  int k;
+  for (k = 0; k < p->nctls && p->ctls[k].tick <= tick; k++)
+    if (p->ctls[k].tick == tick && p->ctls[k].type == type)
+      return k;
+  return -1;
+}
+
+int gr_pattern_set_ctl (gr_pattern *p, int tick, int type, int value)
+{
+  int i, k;
+  if (tick < 0 || tick >= p->len || type < 0 || type >= GR_CTL_TYPES)
+    return -1;
+  if (value < gr_ctl_min (type)) value = gr_ctl_min (type);
+  if (value > gr_ctl_max (type)) value = gr_ctl_max (type);
+  k = gr_pattern_find_ctl (p, tick, type);
+  if (k >= 0)
+    {
+      p->ctls[k].value = (int16_t) value;
+      return k;
+    }
+  if (p->nctls >= GR_MAX_CTLS)
+    return -1;
+  for (i = p->nctls; i > 0 && p->ctls[i - 1].tick > tick; i--)
+    p->ctls[i] = p->ctls[i - 1];
+  p->ctls[i].tick = (int16_t) tick;
+  p->ctls[i].type = (uint8_t) type;
+  p->ctls[i].spare = 0;
+  p->ctls[i].value = (int16_t) value;
+  p->nctls++;
+  return i;
+}
+
+void gr_pattern_delete_ctl (gr_pattern *p, int index)
+{
+  if (index < 0 || index >= p->nctls)
+    return;
+  memmove (&p->ctls[index], &p->ctls[index + 1], (size_t) (p->nctls - index - 1) * sizeof p->ctls[0]);
+  p->nctls--;
+}
+
+int gr_ctl_value_at (const gr_pattern *p, int tick, int type, int dflt)
+{
+  int k, v = dflt;
+  for (k = 0; k < p->nctls && p->ctls[k].tick <= tick; k++)
+    if (p->ctls[k].type == type)
+      v = p->ctls[k].value;
+  return v;
 }
 
 /* Insert keeping the notes sorted by tick, so the sequencer can stop
@@ -368,6 +466,11 @@ int gr_region_split (gr_song *s, int region, int tick)
           const gr_note *x = &src->notes[k];
           gr_pattern_add_note (&s->patterns[np], (x->tick - rot + len) % len, x->len, x->pitch, x->vel);
         }
+      for (k = 0; k < src->nctls; k++)
+        {
+          const gr_ctl *c = &src->ctls[k];
+          gr_pattern_set_ctl (&s->patterns[np], (c->tick - rot + len) % len, c->type, c->value);
+        }
       nr->pattern = np;
     }
   r->len = off;
@@ -483,12 +586,42 @@ static const char *const patch_names[PATCH_COUNT] =
 static const char *const kit_names[KIT_COUNT] = { "Studio Kit", "Electro Kit" };
 static const char *const drum_names[GR_DRUM_SOUNDS] =
   { "Kick", "Snare", "Hi-hat", "Open hat", "Clap", "Low tom", "High tom", "Cowbell" };
+/* General MIDI's percussion map, keys 35..81. */
+static const char *const gm_drums[47] =
+  { "Acoustic Bass Drum", "Bass Drum 1", "Side Stick", "Acoustic Snare", "Hand Clap",
+    "Electric Snare", "Low Floor Tom", "Closed Hi-Hat", "High Floor Tom", "Pedal Hi-Hat",
+    "Low Tom", "Open Hi-Hat", "Low-Mid Tom", "Hi-Mid Tom", "Crash Cymbal 1", "High Tom",
+    "Ride Cymbal 1", "Chinese Cymbal", "Ride Bell", "Tambourine", "Splash Cymbal",
+    "Cowbell", "Crash Cymbal 2", "Vibraslap", "Ride Cymbal 2", "Hi Bongo", "Low Bongo",
+    "Mute Hi Conga", "Open Hi Conga", "Low Conga", "High Timbale", "Low Timbale",
+    "High Agogo", "Low Agogo", "Cabasa", "Maracas", "Short Whistle", "Long Whistle",
+    "Short Guiro", "Long Guiro", "Claves", "Hi Wood Block", "Low Wood Block",
+    "Mute Cuica", "Open Cuica", "Mute Triangle", "Open Triangle" };
 static const char *const notes[12] =
   { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
 
 const char *gr_patch_name (int p) { return p >= 0 && p < PATCH_COUNT ? patch_names[p] : "?"; }
 const char *gr_kit_name (int k) { return k >= 0 && k < KIT_COUNT ? kit_names[k] : "?"; }
-const char *gr_drum_name (int d) { return d >= 0 && d < GR_DRUM_SOUNDS ? drum_names[d] : "?"; }
+int gr_drum_kit_key (int row) { return gr_gm_drum_note (row); }
+
+const char *gr_drum_name (int key)
+{
+  static char other[128][12];
+  int v;
+  if (key < 0 || key > 127)
+    return "?";
+  for (v = 0; v < GR_DRUM_SOUNDS; v++)
+    if (gr_gm_drum_note (v) == key)
+      return drum_names[v];
+  if (key >= 35 && key <= 81)
+    return gm_drums[key - 35];
+  if (!other[key][0])
+    {
+      char n[8];
+      snprintf (other[key], sizeof other[key], "%s %d", gr_note_name (key, n), key);
+    }
+  return other[key];
+}
 const char *gr_key_name (int k) { return notes[((k % 12) + 12) % 12]; }
 
 const char *gr_note_name (int pitch, char buf[8])

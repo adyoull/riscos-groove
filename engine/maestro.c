@@ -257,8 +257,9 @@ static int voice_patch (int program)
   return by_family[(program & 127) / 8];
 }
 
-/* A percussion voice's note to a drum row: Groove's rows are Kick, Snare,
-   Hi-hat, Open hat, Clap, Low tom, High tom, Cowbell. */
+/* A percussion voice's note to one of Groove's drums (GV_*: Kick, Snare,
+   Hi-hat, Open hat, Clap, Low tom, High tom, Cowbell), whose GM key the
+   note becomes. */
 static int drum_row (const char *v, int key, int len)
 {
   if (has (v, "Snare")) return 1;
@@ -550,7 +551,7 @@ int gr_maestro_import (gr_song *s, const char *path, int from,
       s->tracks[t].pan = (float) m.stereo[c] / 3.0f - 1.0f;
       if (drums)
         for (k = 0; k < out[c].count; k++)
-          out[c].n[k].key = drum_row (vname[c], out[c].n[k].key, out[c].n[k].end - out[c].n[k].start);
+          out[c].n[k].key = gr_gm_drum_note (drum_row (vname[c], out[c].n[k].key, out[c].n[k].end - out[c].n[k].start));
       /* From the first bar with music in it. */
       for (k = 0; k < out[c].count; k++)
         {
