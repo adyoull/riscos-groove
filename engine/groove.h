@@ -360,6 +360,24 @@ int  gr_drum_voice (int key);
 int  gr_maestro_import (gr_song *s, const char *path, int tick,
                         const char *const *voices, int nvoices, const char **why);
 
+/* ---- MuseScore and MusicXML (score.c, mscx.c, musicxml.c) ------------------ */
+/* What kind of written score a file is, from what's in it (files from a
+   PC or a USB stick may have no filetype): GR_SCORE_NONE if it isn't one. */
+enum { GR_SCORE_NONE, GR_SCORE_MSCZ, GR_SCORE_MSCX, GR_SCORE_MXL, GR_SCORE_MUSICXML };
+int  gr_score_kind (const char *path);
+/* Import a MuseScore file (.mscz or .mscx, MuseScore 2 to 4) or MusicXML
+   (.musicxml, .xml or compressed .mxl): a new track per part, with its
+   instrument as a SoundFont sound, repeats played out and tied notes
+   joined, from `tick`. Like MIDI import, a song with no music yet takes
+   the score's tempo and time signatures, and its empty tracks make way.
+   Returns the number of tracks made, or -1 (and *why says why). */
+int  gr_score_import (gr_song *s, const char *path, int tick, const char **why);
+/* Export the song as MusicXML (uncompressed), which MuseScore, Sibelius,
+   Dorico and Finale open: a part per drum or instrument track, notes
+   written as notation (note values, ties, rests, a key signature from the
+   song's key). Returns 0, or -1. */
+int  gr_musicxml_export (const gr_song *s, const char *path);
+
 /* ---- names for the UI --------------------------------------------------- */
 const char *gr_patch_name (int patch);
 const char *gr_kit_name (int kit);

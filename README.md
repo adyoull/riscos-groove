@@ -10,7 +10,7 @@ can also use a SoundFont's 128 General MIDI instruments and drum kits.
 
 ![Groove: three loops in a song, with the loop browser](docs/guide/images/loops-dropped.png)
 
-**Status: 0.3, an early version.** Tested on a Raspberry Pi 4 with RISC OS
+**Status: 0.4, an early version.** Tested on a Raspberry Pi 4 with RISC OS
 5.31, and in RISC OS 5.31-5 under emulation on Linux.
 
 ## What it does
@@ -40,9 +40,22 @@ can also use a SoundFont's 128 General MIDI instruments and drum kits.
 - **Mixing**: volume, pan, mute and solo per track, a master volume, reverb
   and a limiter.
 - **Any time signature**, changing part-way through a song if you like.
-- **Files**: songs, WAV export, MIDI import and export (with channels,
-  banks, program changes and controllers), WAV import, and
-  **Maestro music**: Groove plays RISC OS Maestro files the way Maestro
+- **Files**: songs, WAV import and export, MIDI import and export (with
+  channels, banks, program changes and controllers).
+- **MuseScore and MusicXML**: open MuseScore scores (.mscz, .mscx) and
+  MusicXML (.musicxml, .mxl), with their repeats, ties and tuplets, and
+  write songs out as MusicXML that MuseScore, Sibelius, Dorico and Finale
+  open.
+- **The Score window**: any track, or the whole song as a full score,
+  written out as music and lit bar by bar as it plays: note values that
+  respect the beat, ties, tuplets, two staves for piano, dynamics,
+  hairpins, accents, staccato, slurs and pedal marks from how the notes
+  were played; transposing instruments written for their players (or at
+  concert pitch); clefs, key signatures and their changes, 8va and 15ma
+  lines, multi-bar rests, and repeats with first and second endings.
+- **Printing**: the score, or each player's part, on any printer
+  !Printers drives, with numbered pages.
+- **Maestro music**: Groove plays RISC OS Maestro files the way Maestro
   does (clefs, key signatures, accidentals to the end of the bar, ties,
   dots, each channel's volume and stereo position, tempo and time
   signatures).
@@ -63,6 +76,39 @@ Notes selected in the piano roll, ready to move, copy, transpose or make
 louder together:
 
 ![Notes selected in the piano roll](docs/guide/images/note-selection.png)
+
+A MuseScore score (the Moonlight Sonata, from a .mscz file) dropped on
+Groove:
+
+![A MuseScore file imported](docs/guide/images/score-import.png)
+
+The same piece in the Score window (F6), following the playhead:
+
+![The Score window](docs/guide/images/score-window.png)
+
+A song as a full score (Menu > Full score): the clarinet written a tone
+up in D, as a clarinettist reads it, and the guitar on the treble clef
+with an 8 under it:
+
+![A full score](docs/guide/images/score-full.png)
+
+Music played again written once, between repeat signs, with a change
+of key:
+
+![Repeats and a key change](docs/guide/images/score-repeats.png)
+
+A piano part going high: an 8va line from part way through a bar, then
+a 15ma line:
+
+![8va and 15ma lines](docs/guide/images/score-8va.png)
+
+Parts printed through !Printers, one for each player:
+
+![Printed parts](docs/guide/images/score-parts.png)
+
+A Groove song exported as MusicXML and opened in MuseScore:
+
+![A Groove song in MuseScore](docs/guide/images/musicxml-in-musescore.png)
 
 A modulation sweep drawn in the controller lane:
 
@@ -100,7 +146,7 @@ keyboard:
 
 ## Installing
 
-1. Download `Groove-0.3.zip` from the release page and unzip it with SparkFS
+1. Download `Groove-0.4.zip` from the release page and unzip it with SparkFS
    or PackMan's unzip, so the files keep their RISC OS file types.
 2. Copy `!Groove` to wherever you keep your applications.
 3. For SoundFont sounds, install **SoftMIDI** from PackMan, and open the

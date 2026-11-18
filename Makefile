@@ -12,14 +12,15 @@ RCD_DIR ?= ../riscos-crossdev
 .DEFAULT_GOAL := all
 
 ENGINE := engine/song.c engine/engine.c engine/loops.c engine/files.c engine/audioin_null.c \
-          engine/gm.c engine/midifile.c engine/history.c engine/place.c engine/maestro.c
+          engine/gm.c engine/midifile.c engine/history.c engine/place.c engine/maestro.c \
+          engine/unzip.c engine/xml.c engine/score.c engine/mscx.c engine/musicxml.c engine/musicxml_out.c engine/notation.c engine/engrave.c engine/glyphs.c engine/raster.c
 # SoftMIDI's library (third_party/softmidi/VERSION): SoundFont sounds.
 SM := third_party/softmidi
 SOFTMIDI := $(SM)/src/midisynth.c $(SM)/src/output.c $(SM)/src/output_ssb.c $(SM)/src/output_dr.c
 SM_INC := -I$(SM)/include -I$(SM)/third_party/TinySoundFont
 RISCOS := riscos/main.c riscos/arrange.c riscos/editor.c riscos/browser.c riscos/keys.c \
-          riscos/savebox.c riscos/gfx.c riscos/sound.c riscos/layout.c riscos/startlog.c riscos/midiin.c
-HEADERS := engine/groove.h engine/place.h engine/audioin.h engine/gm_internal.h riscos/app.h riscos/gfx.h riscos/layout.h
+          riscos/savebox.c riscos/gfx.c riscos/sound.c riscos/layout.c riscos/startlog.c riscos/midiin.c riscos/score.c
+HEADERS := engine/groove.h engine/place.h engine/score.h engine/xml.h engine/unzip.h engine/notation.h engine/engrave.h engine/glyphs.h engine/raster.h engine/audioin.h engine/gm_internal.h riscos/app.h riscos/gfx.h riscos/layout.h
 OUT := out
 
 all: $(OUT)/Groove.zip
@@ -69,9 +70,9 @@ HOST_CFLAGS := -std=gnu99 -O1 -g -Wall -Wextra -Wno-unused-parameter -D_DEFAULT_
 test: test-engine test-handler test-ui
 
 # The engine: units, a recording round trip, files, a bounce (64-bit).
-$(OUT)/test_engine: host/test_engine.c $(ENGINE) $(HEADERS) $(SOFTMIDI)
+$(OUT)/test_engine: host/test_engine.c host/engrave_svg.c $(ENGINE) $(HEADERS) $(SOFTMIDI)
 	@mkdir -p $(OUT)
-	$(HOSTCC) $(HOST_CFLAGS) $(SM_INC) -o $@ host/test_engine.c $(ENGINE) $(SOFTMIDI) -lpthread -lm
+	$(HOSTCC) $(HOST_CFLAGS) $(SM_INC) -o $@ host/test_engine.c host/engrave_svg.c $(ENGINE) $(SOFTMIDI) -lpthread -lm
 # The SoundFont tests use TimGM6mb (GPL-2; for the tests only, never
 # shipped), fetched from Ubuntu's package and checked by sha256.
 TEST_SF ?= $(OUT)/TimGM6mb.sf2

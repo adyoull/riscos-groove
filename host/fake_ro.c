@@ -472,6 +472,11 @@ _kernel_oserror *_swix (int swi, unsigned mask, ...)
           return &unknown;
         }
       break;
+    case 0x80140:               /* PDriver_Info: no printer driver loaded */
+      {
+        static _kernel_oserror none = { 0x1E6, "SWI not known" };
+        return &none;
+      }
     case 0x4EE83:               /* MIDISupport_CreateDriver */
       fake.ms_flags = r[0];
       snprintf (fake.ms_name, sizeof fake.ms_name, "%.31s", (const char *) (intptr_t) r[1]);

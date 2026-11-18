@@ -28,6 +28,7 @@ static void mark_saved (void)
 }
 
 static int drum_test_region;
+static int errors_before;
 static int midi_before, undo_regions, undo_region, undo_start;
 static int ed_region, ed_tick0, ed_pitch0, ed_regions, ed_end, ren_regions;
 static char ren_name0, ren_names[3][GR_NAME];
@@ -560,7 +561,7 @@ int fake_script (int *b, int *reason)
     case 50:
       CHECK (count_regions () == 4 && app.song.regions[app.sel_region].start == 4 * GR_BAR,
              "Region > Duplicate puts a copy straight after it");
-      b[0] = 0; b[1] = 4; b[2] = 2; b[3] = -1;   /* Song > Key > D */
+      b[0] = 0; b[1] = 5; b[2] = 2; b[3] = -1;   /* Song > Key > D */
       *reason = 9;
       return 1;
     case 51:
@@ -1228,7 +1229,7 @@ int fake_script (int *b, int *reason)
       click (b, reason, app.w_main, 600, lay_track_top (0) - 50, BUT_MENU);
       return 1;
     case 141:
-      b[0] = 0; b[1] = 5; b[2] = 4; b[3] = -1;   /* Song > Time signature > 6/8 */
+      b[0] = 0; b[1] = 6; b[2] = 4; b[3] = -1;   /* Song > Time signature > 6/8 */
       *reason = 9;
       return 1;
     case 142:
@@ -1340,7 +1341,7 @@ int fake_script (int *b, int *reason)
       return 1;
     case 154:
       CHECK (midiin_held () == 1 && gr_drum_voice (38) == GV_SNARE, "on a drum track, a drum key plays its drum");
-      b[0] = 6; b[1] = 0; b[2] = -1;     /* MIDI keyboard > Off */
+      b[0] = 7; b[1] = 0; b[2] = -1;     /* MIDI keyboard > Off */
       app_main_menu (100, 900);
       *reason = 9;
       return 1;
@@ -1349,12 +1350,12 @@ int fake_script (int *b, int *reason)
              "MIDI keyboard > Off stops listening (and lets go of held notes)");
       /* Pete Everett's MIDI Support, loaded now: Groove registers as a driver. */
       fake.ms_present = 1;
-      b[0] = 6; b[1] = 1; b[2] = -1;     /* MIDI keyboard > MIDI Support */
+      b[0] = 7; b[1] = 1; b[2] = -1;     /* MIDI keyboard > MIDI Support */
       app_main_menu (100, 900);          /* (building the menu registers) */
       CHECK (midiin_support () && !strcmp (fake.ms_name, "Groove") && fake.ms_flags == (1 | 2 | 4 | 8),
              "with MIDI Support there, Groove registers as a driver called Groove (sends and receives, queued, whole messages)");
-      CHECK (fake.ms_version == 30 && fake.ms_date[0] != '0' && !strchr (fake.ms_date, '-'),
-             "it gives MIDI Support its version in hundredths (30, shown as 0:30) and a date like the others' (7 Nov 2026)");
+      CHECK (fake.ms_version == 40 && fake.ms_date[0] != '0' && !strchr (fake.ms_date, '-'),
+             "it gives MIDI Support its version in hundredths (40, shown as 0:40) and a date like the others' (7 Nov 2026)");
       *reason = 9;
       return 1;
     case 156:
@@ -1450,7 +1451,7 @@ int fake_script (int *b, int *reason)
         CHECK (off, "stopping sends All Notes Off");
       }
       fake.midi_present = 1;
-      b[0] = 7; b[1] = 3; b[2] = -1;     /* MIDI out > Port 2 */
+      b[0] = 8; b[1] = 3; b[2] = -1;     /* MIDI out > Port 2 */
       app_main_menu (100, 900);
       *reason = 9;
       return 1;
@@ -1465,7 +1466,7 @@ int fake_script (int *b, int *reason)
           if (fake.midi_tx[i] == (0x13000090u | 69 << 8 | 90 << 16)) on = 1;
         CHECK (on, "with MIDI_TxCommand, port in the top bits");
       }
-      b[0] = 7; b[1] = 0; b[2] = -1;     /* MIDI out > Off */
+      b[0] = 8; b[1] = 0; b[2] = -1;     /* MIDI out > Off */
       app_main_menu (100, 900);
       *reason = 9;
       return 1;
@@ -1535,7 +1536,7 @@ int fake_script (int *b, int *reason)
           else if (app.song.tracks[t].type == TRK_AUDIO && app.song.tracks[t].midi_out) all = 0;
         CHECK (all, "Shift-F11: every drum and instrument track on MIDI out (audio tracks not)");
       }
-      b[0] = 0; b[1] = 6; b[2] = -1;     /* Song > Play on MIDI out */
+      b[0] = 0; b[1] = 7; b[2] = -1;     /* Song > Play on MIDI out */
       app_main_menu (100, 900);
       *reason = 9;
       return 1;
@@ -1656,8 +1657,57 @@ int fake_script (int *b, int *reason)
              "the lane's button opens a menu of controllers: Pitch bend");
       *reason = 0;
       return 1;
+    /* ---- MusicXML: export from the Song menu, and a score dropped in
+       with no filetype (Data), as from a PC ---- */
     case 186:
+      click (b, reason, app.w_main, 40, lay_track_top (1) - 20, BUT_MENU);
+      return 1;
     case 187:
+      b[0] = 0; b[1] = 4; b[2] = -1;   /* Song > Export as MusicXML */
+      *reason = 9;
+      return 1;
+    case 188:
+      CHECK (fake.menu == app.w_save && !strcmp (save_path_buffer () + strlen (save_path_buffer ()) - 9, "/musicxml"),
+             "Song > Export as MusicXML opens the save box, the name ending /musicxml");
+      strcpy (save_path_buffer (), "/tmp/groove_ui.musicxml");
+      key (b, reason, app.w_save, 13);
+      return 1;
+    case 189:
+      CHECK (exists ("/tmp/groove_ui.musicxml") && fake.filetype_set == FILETYPE_XML,
+             "the song is written as MusicXML, filetype XML");
+      gr_stop (app.eng);
+      arrange_new_song ();
+      midi_before = app.song.ntracks;
+      message (b, reason, MSG_DATALOAD, -2, "/tmp/groove_ui.musicxml", 0xFFD);
+      return 1;
+    case 190:
+      CHECK (fake.msg[4] == MSG_DATALOADACK && app.song.ntracks > 0 && count_regions () > 0,
+             "a MusicXML score with the filetype Data, dropped on the icon bar, imports by what's in it");
+      mark_saved ();
+      *reason = 0;
+      return 1;
+    case 191:
+      errors_before = fake.errors;
+      message (b, reason, MSG_DATALOAD, -2, "/tmp/groove_ui.mid", 0xFFD);
+      return 1;
+    case 192:
+      CHECK (fake.errors == errors_before + 1, "a file that isn't a score (MIDI with the type Data) isn't taken for one: Groove says what it loads");
+      mark_saved ();
+      *reason = 0;
+      return 1;
+    case 193:
+      /* Print with no printer driver: Groove says how to get one. */
+      errors_before = fake.errors;
+      app.sel_track = 0;
+      key (b, reason, app.w_main, 0x10);
+      return 1;
+    case 194:
+      CHECK (fake.errors == errors_before + 1, "Ctrl-P with no printer driver loaded: Groove says to open !Printers");
+      mark_saved ();
+      *reason = 0;
+      return 1;
+    case 195:
+    case 196:
       mark_saved ();
       *reason = 0;
       return 1;
@@ -1672,6 +1722,7 @@ int main (void)
   remove ("/tmp/groove_ui_drag.song");
   remove ("/tmp/groove_ui.wav");
   remove ("/tmp/groove_ui.mid");
+  remove ("/tmp/groove_ui.musicxml");
   /* A web browser for HTML, as NetSurf sets up. */
   setenv ("Alias$@RunType_FAF", "/<NetSurf$Dir>.!Run %*0", 1);
   /* !SoftMIDI's variable, as if the Filer had seen it. */
@@ -1681,10 +1732,10 @@ int main (void)
   test_workspace ();
   rc = groove_main ();
   CHECK (rc == 0, "Groove exits cleanly");
-  CHECK (step == 189, "the whole script ran");
+  CHECK (step == 198, "the whole script ran");
   CHECK (fake.ms_removed == 7, "on quitting, Groove leaves MIDI Support (RemoveDriver)");
   CHECK (fake.closed_down && fake.ring == NULL, "on quit: SharedSound handler removed, Wimp_CloseDown");
-  CHECK (fake.errors == 4, "four error boxes in all (two quit questions, no web browser, load question)");
+  CHECK (fake.errors == 6, "six error boxes in all (two quit questions, no web browser, load question, not a file Groove loads, no printer)");
   CHECK (fake.nulls_while_masked == 0, "no null events were forced on the app while it was idle");
   printf ("  %d polls, %d redraws, %d plots, %d texts, %d SWIs\n",
           fake.polls, fake.redraws, fake.plots, fake.texts, fake.swis);

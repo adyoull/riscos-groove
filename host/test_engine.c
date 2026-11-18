@@ -7,6 +7,13 @@
 #include <string.h>
 #include <time.h>
 #include "../engine/groove.h"
+#include "../engine/unzip.h"
+#include "../engine/xml.h"
+#include "../engine/notation.h"
+#include "../engine/engrave.h"
+#include "../engine/glyphs.h"
+
+int gr_engraving_svg (const gr_engraving *e, const char *path, double px_per_sp, int highlight_bar);
 
 static int failures, checks;
 #define CHECK(c, what) do { checks++; if (!(c)) { failures++; printf ("FAIL %s (%s:%d)\n", what, __FILE__, __LINE__); } } while (0)
@@ -1695,6 +1702,1060 @@ static void test_sixteen (const char *sf)
   gr_song_free (&s);
 }
 
+
+/* ---- MuseScore and MusicXML ------------------------------------------------- */
+
+static unsigned char *slurp (const char *path, size_t *n)
+{
+  FILE *f = fopen (path, "rb");
+  unsigned char *d;
+  long size;
+  if (!f)
+    return NULL;
+  fseek (f, 0, SEEK_END);
+  size = ftell (f);
+  fseek (f, 0, SEEK_SET);
+  d = malloc ((size_t) size + 1);
+  if (d && fread (d, 1, (size_t) size, f) != (size_t) size)
+    {
+      free (d);
+      d = NULL;
+    }
+  fclose (f);
+  *n = (size_t) size;
+  return d;
+}
+
+static void test_unzip_xml (void)
+{
+  size_t n, m, len;
+  unsigned char *zip = slurp ("host/scores/repeats3.mscz", &n), *plain = slurp ("host/scores/repeats3.mscx", &m);
+  gr_zip_entry e[8];
+  int k, i, found = -1;
+  CHECK (zip && plain, "the test scores are there (host/scores)");
+  if (!zip || !plain)
+    return;
+  k = gr_zip_names (zip, n, e, 8);
+  CHECK (k == 4, "a .mscz lists its four files");
+  for (i = 0; i < k; i++)
+    if (!strcmp (e[i].name, "Repeats.mscx"))
+      found = i;
+  CHECK (found >= 0 && e[found].method == 8, "its score is deflated");
+  if (found >= 0)
+    {
+      unsigned char *d = gr_zip_read (zip, n, &e[found], &len);
+      CHECK (d && len == m && !memcmp (d, plain, m), "unzipped, it's the score byte for byte");
+      free (d);
+      /* Damage: a cut-short zip, and scrambled deflate data. */
+      CHECK (gr_zip_names (zip, 40, e, 8) < 0, "a cut-short zip isn't read");
+      for (i = 0; i < 64; i++)
+        zip[e[found].offset + 60 + (size_t) i * 7 % 300] ^= (unsigned char) (i * 37 + 1);
+      d = gr_zip_read (zip, n, &e[found], &len);
+      CHECK (1, "scrambled deflate data doesn't crash");
+      free (d);
+    }
+  CHECK (gr_zip_names (plain, m, e, 8) < 0, "an XML file isn't a zip");
+  free (zip);
+  free (plain);
+
+  {
+    char doc[] = "\xEF\xBB\xBF<?xml version=\"1.0\"?>\n<!DOCTYPE a [ <!ENTITY x \"y\"> ]>\n"
+                 "<!-- a comment <b>not</b> -->\n<a one='1' two=\"&lt;2&gt;\">\n  <b>caf&#233; &amp; &#x266d;</b>"
+                 "<c/><b k=\"v\" >second</b><d><![CDATA[x<y]]></d>\n</a>";
+    gx_doc *d = gx_parse (doc, strlen (doc));
+    gx_node *r = d ? gx_root (d) : NULL, *b;
+    CHECK (r && !strcmp (r->name, "a") && !strcmp (gx_attr (r, "one"), "1") && !strcmp (gx_attr (r, "two"), "<2>"),
+           "XML: the root and its attributes (both quotes, entities)");
+    b = r ? gx_child (r, "b") : NULL;
+    CHECK (b && !strcmp (gx_text (b, NULL), "caf\xC3\xA9 & \xE2\x99\xAD"), "XML: text with entities and character references, as UTF-8");
+    CHECK (b && gx_next (b, "b") && !strcmp (gx_text (gx_next (b, "b"), NULL), "second")
+           && !strcmp (gx_attr (gx_next (b, "b"), "k"), "v"), "XML: the next element of a name");
+    CHECK (r && gx_child (r, "c") && !gx_child (gx_child (r, "c"), "b"), "XML: an empty element");
+    CHECK (r && !strcmp (gx_text (r, "d"), "x<y"), "XML: CDATA");
+    gx_free (d);
+  }
+  {
+    char bad1[] = "<a><b></a", bad2[] = "<a x=1></a>", bad3[] = "just text";
+    gx_doc *d;
+    CHECK (!(d = gx_parse (bad3, strlen (bad3))), "XML: text with no element isn't a document");
+    gx_free (d);
+    d = gx_parse (bad2, strlen (bad2));
+    CHECK (!d, "XML: an unquoted attribute isn't read");
+    gx_free (d);
+    d = gx_parse (bad1, strlen (bad1));
+    CHECK (1, "XML: unclosed elements don't crash");
+    gx_free (d);
+  }
+}
+
+typedef struct { int tick, pitch, len, vel; } xnote;
+
+/* A track's notes, in song ticks, in order (tick, then pitch). */
+static int track_note_list (const gr_song *s, int t, xnote *out, int max)
+{
+  int n = 0, r, k, i, j;
+  for (r = 0; r < GR_MAX_REGIONS; r++)
+    {
+      const gr_region *g = &s->regions[r];
+      if (!g->used || g->track != t || g->pattern < 0)
+        continue;
+      for (k = 0; k < s->patterns[g->pattern].nnotes && n < max; k++)
+        {
+          const gr_note *x = &s->patterns[g->pattern].notes[k];
+          out[n].tick = g->start + x->tick;
+          out[n].pitch = x->pitch;
+          out[n].len = x->len;
+          out[n].vel = x->vel;
+          n++;
+        }
+    }
+  for (i = 1; i < n; i++)
+    for (j = i; j > 0 && (out[j].tick < out[j - 1].tick
+                          || (out[j].tick == out[j - 1].tick && out[j].pitch < out[j - 1].pitch)); j--)
+      {
+        xnote x = out[j];
+        out[j] = out[j - 1];
+        out[j - 1] = x;
+      }
+  return n;
+}
+
+static void test_score_import (void)
+{
+  /* host/scores/repeats.*: a pickup, |: D E~ | E (F+A) triplet | 1. C :| 2. D (8va) | (grace) E + C below,
+     in 3/4. Played as MuseScore plays it: the repeat, then the second ending. */
+  static const xnote want[] = {
+    { 0, 72, 96, 45 }, { 96, 74, 96, 80 }, { 192, 76, 288, 80 }, { 480, 77, 96, 80 }, { 480, 81, 96, 80 },
+    { 576, 79, 32, 80 }, { 608, 81, 32, 80 }, { 640, 83, 32, 80 }, { 672, 84, 288, 80 },
+    { 960, 74, 96, 80 }, { 1056, 76, 288, 80 }, { 1344, 77, 96, 80 }, { 1344, 81, 96, 80 },
+    { 1440, 79, 32, 80 }, { 1472, 81, 32, 80 }, { 1504, 83, 32, 80 }, { 1536, 86, 288, 80 },
+    { 1824, 60, 288, 49 }, { 1824, 76, 192, 49 } };
+  static const char *files[] = { "host/scores/repeats.musicxml", "host/scores/repeats.mxl",
+                                 "host/scores/repeats-utf16.musicxml", "host/scores/repeats3.mscx",
+                                 "host/scores/repeats3.mscz" };
+  static const int kinds[] = { GR_SCORE_MUSICXML, GR_SCORE_MXL, GR_SCORE_MUSICXML, GR_SCORE_MSCX, GR_SCORE_MSCZ };
+  static gr_song s;
+  xnote got[64];
+  const char *why;
+  int f, n, k, ok;
+  char what[160];
+  for (f = 0; f < 5; f++)
+    {
+      int mscore = f >= 3;
+      gr_song_init (&s);
+      snprintf (what, sizeof what, "%s is a score (kind %d)", files[f], kinds[f]);
+      CHECK (gr_score_kind (files[f]) == kinds[f], what);
+      n = gr_score_import (&s, files[f], 0, &why);
+      snprintf (what, sizeof what, "%s imports (%s)", files[f], why ? why : "no message");
+      CHECK (n == (mscore ? 1 : 2) && !why, what);
+      if (n < 1)
+        continue;
+      snprintf (what, sizeof what, "%s: it replaces the new song's empty tracks; its tempo and 3/4", files[f]);
+      CHECK (s.ntracks == n && s.tempo == (mscore ? 120 : 100) && s.nmeters == 1 && s.meters[0].num == 3
+             && s.meters[0].den == 4, what);
+      n = track_note_list (&s, 0, got, 64);
+      ok = n == (int) (sizeof want / sizeof want[0]);
+      for (k = 0; ok && k < n; k++)
+        ok = got[k].tick == want[k].tick && got[k].pitch == want[k].pitch && got[k].len == want[k].len
+             && (got[k].vel == want[k].vel || (mscore && k == 0 && got[k].vel == 80));
+      snprintf (what, sizeof what, "%s: repeats and endings played out, ties joined, triplets, a chord, "
+                "grace notes left out, the 8va, a second voice, dynamics (%d notes)", files[f], n);
+      CHECK (ok, what);
+      if (!mscore)
+        {
+          snprintf (what, sizeof what, "%s: parts keep their names and instruments", files[f]);
+          CHECK (!strcmp (s.tracks[1].name, "Clarinet in Bb"), "a part's name in RISC OS's characters (B-flat as Bb)");
+          CHECK (!strcmp (s.tracks[0].name, "Flute & friends") && s.tracks[0].gm == 73
+                 && s.tracks[1].gm == 71 && s.tracks[0].type == TRK_INST, what);
+          n = track_note_list (&s, 1, got, 64);
+          snprintf (what, sizeof what, "%s: a transposing part sounds where it should (B-flat clarinet: written D, heard C), in the repeat too", files[f]);
+          CHECK (n == 2 && got[0].tick == 96 && got[0].pitch == 72 && got[1].tick == 960 && got[1].pitch == 72, what);
+        }
+      else
+        {
+          snprintf (what, sizeof what, "%s: the part's name and program (not MuseScore's own sound bank)", files[f]);
+          CHECK (!strcmp (s.tracks[0].name, "Piano") && s.tracks[0].gm == 0 && s.tracks[0].bank_msb == -1, what);
+        }
+      gr_song_free (&s);
+    }
+
+  /* MuseScore 2's own .mscz of repeats.musicxml (its voltas, ties and
+     tuplets are written differently again). */
+  gr_song_init (&s);
+  n = gr_score_import (&s, "host/scores/repeats2.mscz", 0, &why);
+  CHECK (n == 2 && gr_score_kind ("host/scores/repeats2.mscz") == GR_SCORE_MSCZ, "MuseScore 2: a .mscz imports");
+  n = track_note_list (&s, 0, got, 64);
+  ok = n == (int) (sizeof want / sizeof want[0]);
+  for (k = 0; ok && k < n; k++)
+    ok = got[k].tick == want[k].tick && got[k].pitch == want[k].pitch && got[k].len == want[k].len;
+  CHECK (ok, "MuseScore 2: the same notes, repeats, endings and ties");
+  n = track_note_list (&s, 1, got, 64);
+  CHECK (n == 2 && got[0].pitch == 72, "MuseScore 2: the clarinet at concert pitch");
+  gr_song_free (&s);
+
+  /* MuseScore 4.4: ties on the note they end on, voltas listed after the
+     staves, velocities as velocities, a cue note that isn't played. */
+  gr_song_init (&s);
+  n = gr_score_import (&s, "host/scores/ties44.mscx", 0, &why);
+  CHECK (n == 1 && !strcmp (s.tracks[0].name, "Violin") && s.tracks[0].gm == 40, "MuseScore 4.4: the instrument's name from its label");
+  n = track_note_list (&s, 0, got, 64);
+  CHECK (n == 4 && got[0].tick == 0 && got[0].len == 384 && got[1].tick == 384 && got[1].pitch == 62
+         && got[2].tick == 768 && got[2].pitch == 60 && got[3].tick == 1152 && got[3].pitch == 64 && got[3].vel == 100
+         && got[3].len == 192,
+         "MuseScore 4.4: the tie joined, the repeat and its endings, a note's velocity, the cue note left out");
+  gr_song_free (&s);
+
+  /* Into a song that has music: new tracks from the bar, the song's tempo
+     and meter kept. */
+  gr_song_init (&s);
+  gr_loop_place (&s, find_loop ("Boom Bap"), 0, 0);
+  k = s.ntracks;
+  n = gr_score_import (&s, "host/scores/repeats3.mscz", 4 * GR_BAR, &why);
+  CHECK (n == 1 && s.ntracks == k + 1 && s.tempo == 110 && s.meters[0].num == 4,
+         "into a song with music: a new track, the song's tempo and meter kept");
+  n = track_note_list (&s, k, got, 64);
+  CHECK (n > 0 && got[0].tick == 4 * GR_BAR && got[0].pitch == 72, "it starts at the bar it was dropped on");
+  gr_song_free (&s);
+
+  /* Not scores. */
+  CHECK (gr_score_kind ("host/test_engine.c") == GR_SCORE_NONE, "a C file isn't a score");
+  gr_song_init (&s);
+  CHECK (gr_score_import (&s, "host/test_engine.c", 0, &why) < 0 && why, "importing it says why not");
+  CHECK (gr_score_import (&s, "/nonexistent/score.mscz", 0, &why) < 0 && why, "a missing file says so");
+  gr_song_free (&s);
+}
+
+/* A song written out as MusicXML comes back the same when it's read in.
+   lengths: 0 not compared, 1 exactly, 2 to the nearest 32nd note. */
+static int same_notes (const gr_song *a, int ta, const gr_song *b, int tb, int lengths, int drums)
+{
+  static xnote x[4096], y[4096];
+  int n = track_note_list (a, ta, x, 4096), m = track_note_list (b, tb, y, 4096), k;
+  if (n != m)
+    {
+      printf ("  (%d notes, %d back)\n", n, m);
+      return 0;
+    }
+  for (k = 0; k < n; k++)
+    if (x[k].tick != y[k].tick || x[k].pitch != y[k].pitch
+        || (lengths == 1 && !drums && x[k].len != y[k].len)
+        || (lengths == 2 && !drums && abs (x[k].len - y[k].len) > 6) || abs (x[k].vel - y[k].vel) > 1)
+      {
+        printf ("  (note %d: %d %d %d %d, back %d %d %d %d)\n", k, x[k].tick, x[k].pitch, x[k].len, x[k].vel,
+                y[k].tick, y[k].pitch, y[k].len, y[k].vel);
+        return 0;
+      }
+  return 1;
+}
+
+/* Groove's loops: drums, bass, chords and a tune, eight bars. */
+static void loops_song (gr_song *s)
+{
+  static const char *names[] = { "Boom Bap", "Funk Pop", "Pop Chords", "Hook Melody" };
+  int i, b;
+  gr_song_init (s);
+  while (s->ntracks)
+    gr_track_delete (s, s->ntracks - 1);
+  for (i = 0; i < 4; i++)
+    {
+      int l = find_loop (names[i]);
+      for (b = 0; b < 8; b += gr_loop_get (l)->bars)
+        gr_loop_place (s, l, b ? s->ntracks - 1 : -1, b * GR_BAR);
+    }
+}
+
+/* By hand: 4/4, a bar of 6/8, 3/4; a bass held under eighths (two
+   voices), a chord tied over the bar line, triplets, dotted rhythms,
+   sixteenths, a wide part on two staves, in C minor. Returns its track. */
+static int hand_song (gr_song *sp)
+{
+  int t, p, r;
+  gr_song_init (sp);
+  while (sp->ntracks)
+    gr_track_delete (sp, sp->ntracks - 1);
+  sp->tempo = 96;
+  gr_set_meter (sp, 2, 6, 8);
+  gr_set_meter (sp, 3, 3, 4);
+  t = gr_track_add (sp, TRK_INST, "Piano", PATCH_EPIANO);
+  sp->tracks[t].gm = 0;
+  p = gr_pattern_new (sp, "Piano", gr_bar_tick (sp, 4));
+  r = gr_region_add (sp, t, 0, gr_bar_tick (sp, 4), p);
+  CHECK (p >= 0 && r >= 0, "(a region for the piece)");
+  {
+    static const gr_note notes[] = {
+      /* bar 1 (4/4): C minor - C2 held a bar, eighths with a G held over them */
+      { 0, 384, 36, 70 }, { 0, 192, 79, 70 }, { 0, 48, 60, 80 }, { 48, 48, 63, 81 }, { 96, 48, 67, 82 }, { 144, 48, 72, 83 },
+      { 192, 72, 75, 90 }, { 264, 24, 74, 60 }, { 288, 32, 72, 70 }, { 320, 32, 70, 71 }, { 352, 32, 68, 72 },
+      /* bar 2: a chord held into bar 3 (tied), sixteenths below */
+      { 384, 480, 60, 64 }, { 384, 480, 63, 64 }, { 384, 480, 67, 64 },
+      { 384, 24, 48, 50 }, { 408, 24, 50, 51 }, { 432, 24, 51, 52 }, { 456, 24, 53, 53 },
+      /* bar 3 (6/8): eighths in two groups of three */
+      { 768, 48, 55, 60 }, { 816, 48, 56, 60 }, { 864, 48, 58, 60 }, { 912, 144, 43, 70 },
+      /* bar 4 (3/4) */
+      { 1056, 192, 72, 100 }, { 1248, 96, 71, 100 } };
+    int i;
+    for (i = 0; i < (int) (sizeof notes / sizeof notes[0]); i++)
+      gr_pattern_add_note (&sp->patterns[p], notes[i].tick, notes[i].len, notes[i].pitch, notes[i].vel);
+  }
+  return t;
+}
+
+static void test_musicxml_export (void)
+{
+  static gr_song s, back;
+  const char *path = "/tmp/groove_test.musicxml", *why;
+  int t, n, ok;
+  size_t len;
+  char *xml;
+
+  /* Groove's loops: drums, bass, chords and a tune. */
+  loops_song (&s);
+  CHECK (gr_musicxml_export (&s, path) == 0, "MusicXML: Groove's loops export");
+  gr_song_init (&back);
+  n = gr_score_import (&back, path, 0, &why);
+  CHECK (n == 4 && back.ntracks == 4 && back.tracks[0].type == TRK_DRUMS && back.tempo == s.tempo,
+         "and come back as four tracks, drums as drums, at the song's tempo");
+  for (t = 0, ok = 1; t < 4; t++)
+    ok &= same_notes (&s, t, &back, t, 2, s.tracks[t].type == TRK_DRUMS);
+  CHECK (ok, "every note comes back where it was, the same key (drum keys too) and velocity, its length to the nearest 32nd note");
+  CHECK (!strcmp (back.tracks[2].name, s.tracks[2].name) && back.tracks[2].gm == gr_track_program (&s.tracks[2]),
+         "each part is named after its track, with its General MIDI instrument");
+  xml = (char *) slurp (path, &len);
+  CHECK (xml && strstr (xml, "<score-partwise version=\"4.0\">") && strstr (xml, "<sign>percussion</sign>")
+         && strstr (xml, "<midi-unpitched>37</midi-unpitched>") && strstr (xml, "<fifths>0</fifths><mode>major</mode>"),
+         "it's MusicXML 4.0, drums on a percussion staff with their keys, in C major");
+  if (xml)
+    {
+      gx_doc *d = gx_parse (xml, len);
+      CHECK (d != NULL, "and well-formed XML");
+      gx_free (d);
+      free (xml);
+    }
+  gr_song_free (&s);
+  gr_song_free (&back);
+
+  t = hand_song (&s);
+  CHECK (gr_musicxml_export (&s, path) == 0, "MusicXML: a piece written by hand exports");
+  gr_song_init (&back);
+  n = gr_score_import (&back, path, 0, &why);
+  CHECK (n == 1 && same_notes (&s, t, &back, 0, 1, 0),
+         "and comes back note for note: held notes, ties over the bar line, triplets, dotted rhythms");
+  CHECK (back.nmeters == 3 && back.meters[1].bar == 2 && back.meters[1].num == 6 && back.meters[1].den == 8
+         && back.meters[2].num == 3, "its time signatures too");
+  xml = (char *) slurp (path, &len);
+  CHECK (xml && strstr (xml, "<fifths>-3</fifths><mode>minor</mode>") && strstr (xml, "<step>E</step><alter>-1</alter>"),
+         "the key is C minor (three flats), and E-flat is spelled E-flat");
+  CHECK (xml && strstr (xml, "<staves>2</staves>") && strstr (xml, "<voice>2</voice>")
+         && strstr (xml, "<actual-notes>3</actual-notes>") && strstr (xml, "<tied type=\"start\"/>")
+         && strstr (xml, "<type>eighth</type>\n        <dot/>"),
+         "it's written on two staves, with a second voice, triplets, ties and a dotted eighth");
+  free (xml);
+  gr_song_free (&s);
+  gr_song_free (&back);
+
+  /* Nothing to write. */
+  gr_song_init (&s);
+  CHECK (gr_musicxml_export (&s, path) < 0, "a song with no notes isn't exported");
+  gr_song_free (&s);
+}
+
+static int count_kind (const gr_engraving *e, int kind, int glyph)
+{
+  int i, n = 0;
+  for (i = 0; i < e->n; i++)
+    if (e->it[i].kind == kind && (glyph < 0 || e->it[i].glyph == glyph))
+      n++;
+  return n;
+}
+
+/* Every bar has a box, in order, that bar_at finds; nothing is drawn
+   outside the score. */
+static int engraving_sane (const gr_engraving *e, int bars)
+{
+  int i, b = 0;
+  for (i = 0; i < e->n; i++)
+    {
+      const gr_eitem *it = &e->it[i];
+      if (it->x0 < 0 || it->x0 > e->width + EG_SP || it->y0 > 0 || it->y0 < -e->height)
+        return 0;
+      if (it->kind == EK_BAR)
+        {
+          if (it->w != b++)
+            return 0;
+          if (gr_engraving_bar_at (e, (it->x0 + it->x1) / 2, (it->y0 + it->y1) / 2) != it->w)
+            return 0;
+        }
+    }
+  return b == bars && gr_engraving_bar_at (e, -EG_SP * 4, 0) < 0 && gr_engraving_bar_at (e, 0, -e->height - EG_SP * 4) < 0;
+}
+
+static void test_engrave (void)
+{
+  static gr_song s;
+  gr_notation *nt;
+  gr_engraving *e, *narrow;
+  int t, ok = 1;
+
+  /* Each of the loops' tracks on its own, as the Score window shows it. */
+  loops_song (&s);
+  for (t = 0; t < s.ntracks; t++)
+    {
+      nt = gr_notation_make (&s, t, 8);
+      e = nt ? gr_engrave (nt, 0, 60 * EG_SP, NULL, s.tempo) : NULL;
+      if (!e || !engraving_sane (e, 8) || count_kind (e, EK_GLYPH, -1) < 10)
+        ok = 0;
+      if (nt && t == 0)
+        {
+          const gr_nrange *hands = &nt->parts[0].voice[0], *feet = &nt->parts[0].voice[1];
+          int k, h, kick_up = 0, kick_down = 0;
+          for (k = 0; k < hands->n; k++)
+            for (h = 0; h < nt->ev[hands->first + k].nheads; h++)
+              kick_up += nt->hd[nt->ev[hands->first + k].head + h].pitch == 36;
+          for (k = 0; k < feet->n; k++)
+            for (h = 0; h < nt->ev[feet->first + k].nheads; h++)
+              kick_down += nt->hd[nt->ev[feet->first + k].head + h].pitch == 36;
+          CHECK (!kick_up && kick_down == 3, "Score: drums in two voices, the kick (feet) apart from the hands");
+        }
+      if (e && t == 0)
+        {
+          CHECK (count_kind (e, EK_GLYPH, GL_PERC_CLEF) > 0 && count_kind (e, EK_GLYPH, GL_HEAD_X) > 0,
+                 "Score: drums on a percussion staff, cymbals with x noteheads");
+          gr_engraving_svg (e, "/tmp/groove_test_drums.svg", 8, -1);
+        }
+      if (e && t == 1)
+        CHECK (count_kind (e, EK_GLYPH, GL_F_CLEF) > 0 && count_kind (e, EK_GLYPH, GL_G_CLEF) == 0,
+               "the bass on a bass staff");
+      if (e && t == 3)
+        {
+          CHECK (count_kind (e, EK_GLYPH, GL_G_CLEF) > 0 && count_kind (e, EK_BEAM, -1) > 0
+                 && count_kind (e, EK_GLYPH, GL_MET_QUARTER) == 1,
+                 "the tune on a treble staff, with beams, and a metronome mark");
+          narrow = gr_engrave (nt, 0, 25 * EG_SP, NULL, s.tempo);
+          CHECK (narrow && engraving_sane (narrow, 8) && narrow->height > e->height,
+                 "a narrower window gives more, shorter systems");
+          gr_engraving_free (narrow);
+        }
+      gr_engraving_free (e);
+      gr_notation_free (nt);
+    }
+  CHECK (ok, "every loop track is laid out, a box for each bar that a click finds, nothing outside the score");
+  /* The full score: all four parts in each system, lined up, named. */
+  {
+    int parts[8], n, i, k, names = 0, braces;
+    nt = gr_notation_make (&s, -1, 8);
+    n = nt ? nt->nparts : 0;
+    for (i = 0; i < n; i++)
+      parts[i] = i;
+    e = nt ? gr_engrave_parts (nt, parts, n, 90 * EG_SP, "Loops", s.tempo, EG_MULTIRESTS) : NULL;
+    for (i = 0; e && i < e->n; i++)
+      if (e->it[i].kind == EK_TEXT)
+        for (k = 0; k < n; k++)
+          names += !strcmp (e->text + e->it[i].w, nt->parts[k].name);
+    braces = e ? count_kind (e, EK_GLYPH, GL_BRACE) : 0;
+    CHECK (n == 4 && e && engraving_sane (e, 8) && names == 4 && braces == e->nsys
+           && count_kind (e, EK_GLYPH, GL_PERC_CLEF) == e->nsys && count_kind (e, EK_GLYPH, GL_F_CLEF) == 2 * e->nsys,
+           "Full score: four parts in each system (drums, bass, piano on two staves), named once");
+    if (e)
+      gr_engraving_svg (e, "/tmp/groove_test_fullscore.svg", 6, -1);
+    gr_engraving_free (e);
+    gr_notation_free (nt);
+  }
+  gr_song_free (&s);
+
+  /* The hand-written piece: two staves, ties, triplets, dots, meters. */
+  t = hand_song (&s);
+  nt = gr_notation_make (&s, t, 4);
+  e = nt ? gr_engrave (nt, 0, 60 * EG_SP, "Piece", s.tempo) : NULL;
+  CHECK (e && engraving_sane (e, 4), "Score: a piece written by hand is laid out");
+  if (e)
+    {
+      CHECK (count_kind (e, EK_GLYPH, GL_BRACE) >= 1 && count_kind (e, EK_GLYPH, GL_G_CLEF) == count_kind (e, EK_GLYPH, GL_BRACE)
+             && count_kind (e, EK_GLYPH, GL_F_CLEF) == count_kind (e, EK_GLYPH, GL_BRACE),
+             "on a grand staff, braced, both clefs on each system");
+      CHECK (count_kind (e, EK_TIE, -1) >= 3 && count_kind (e, EK_GLYPH, GL_TUPLET_3) >= 1
+             && count_kind (e, EK_GLYPH, GL_DOT) >= 1 && count_kind (e, EK_GLYPH, GL_FLAT) >= 3,
+             "with the chord tied over the bar line, a triplet, a dotted note and three flats");
+      CHECK (count_kind (e, EK_GLYPH, GL_TIME_6) == 2 && count_kind (e, EK_GLYPH, GL_TIME_8) == 2
+             && count_kind (e, EK_GLYPH, GL_TIME_3) == 2, "6/8 and 3/4 where the meter changes");
+      CHECK (count_kind (e, EK_TEXT, -1) >= 1, "and its title");
+      gr_engraving_svg (e, "/tmp/groove_test_piece.svg", 8, 1);
+    }
+  gr_engraving_free (e);
+  gr_notation_free (nt);
+
+  /* Played in: a legato phrase (each note overlapping the next), short
+     notes, getting louder, with one note hit hard. */
+  gr_song_free (&s);
+  gr_song_init (&s);
+  while (s.ntracks)
+    gr_track_delete (&s, s.ntracks - 1);
+  t = gr_track_add (&s, TRK_INST, "Flute", PATCH_EPIANO);
+  {
+    int p = gr_pattern_new (&s, "Flute", gr_bar_tick (&s, 4)), i;
+    static const gr_note notes[] = {
+      /* bar 1, p: four quarters, legato */
+      { 0, 104, 72, 45 }, { 96, 104, 74, 47 }, { 192, 104, 76, 46 }, { 288, 96, 77, 48 },
+      /* bar 2, mf: eighths played short, one accented */
+      { 384, 20, 79, 80 }, { 432, 20, 77, 78 }, { 480, 20, 76, 110 }, { 528, 20, 74, 80 },
+      { 576, 192, 72, 82 },
+      /* bars 3-4, f */
+      { 768, 384, 67, 100 }, { 1152, 384, 72, 100 } };
+    gr_region_add (&s, t, 0, gr_bar_tick (&s, 4), p);
+    for (i = 0; i < (int) (sizeof notes / sizeof notes[0]); i++)
+      gr_pattern_add_note (&s.patterns[p], notes[i].tick, notes[i].len, notes[i].pitch, notes[i].vel);
+  }
+  nt = gr_notation_make (&s, t, 4);
+  e = nt ? gr_engrave (nt, 0, 60 * EG_SP, NULL, s.tempo) : NULL;
+  CHECK (e && engraving_sane (e, 4), "Score: a part played in is laid out");
+  if (e)
+    {
+      CHECK (count_kind (e, EK_SLUR, -1) == 1, "the legato phrase under one slur");
+      CHECK (count_kind (e, EK_GLYPH, GL_STACCATO_ABOVE) + count_kind (e, EK_GLYPH, GL_STACCATO_BELOW) == 4,
+             "the four short notes staccato");
+      CHECK (count_kind (e, EK_GLYPH, GL_ACCENT_ABOVE) + count_kind (e, EK_GLYPH, GL_ACCENT_BELOW) == 1,
+             "the one hit hard accented");
+      CHECK (count_kind (e, EK_GLYPH, GL_DYN_P) == 1 && count_kind (e, EK_GLYPH, GL_DYN_MF) == 1
+             && count_kind (e, EK_GLYPH, GL_DYN_F) == 1, "p, then mf, then f");
+      gr_engraving_svg (e, "/tmp/groove_test_played.svg", 8, -1);
+    }
+  gr_engraving_free (e);
+  gr_notation_free (nt);
+  {
+    static gr_song back;
+    const char *path = "/tmp/groove_test_played.musicxml", *why;
+    size_t len;
+    char *xml;
+    CHECK (gr_musicxml_export (&s, path) == 0, "MusicXML: a part played in exports");
+    xml = (char *) slurp (path, &len);
+    CHECK (xml && strstr (xml, "<slur type=\"start\"") && strstr (xml, "<slur type=\"stop\"")
+           && strstr (xml, "<staccato/>") && strstr (xml, "<accent/>") && strstr (xml, "release=\"-120\"")
+           && strstr (xml, "<dynamics><p/></dynamics>") && strstr (xml, "<dynamics><mf/></dynamics>"),
+           "with its slur, staccato (and how short), accent and dynamics");
+    free (xml);
+    gr_song_init (&back);
+    CHECK (gr_score_import (&back, path, 0, &why) == 1 && same_notes (&s, t, &back, 0, 2, 0),
+           "and comes back with the staccato notes as short as they were played");
+    gr_song_free (&back);
+  }
+
+  /* Getting louder then softer, with the sustain pedal held a bar at a
+     time (let up and down again at the bar line). */
+  gr_song_free (&s);
+  gr_song_init (&s);
+  while (s.ntracks)
+    gr_track_delete (&s, s.ntracks - 1);
+  t = gr_track_add (&s, TRK_INST, "Piano", PATCH_EPIANO);
+  {
+    int p = gr_pattern_new (&s, "Piano", gr_bar_tick (&s, 4)), i, cresc = 0, dim = 0, stop = 0, acc = 0;
+    gr_region_add (&s, t, 0, gr_bar_tick (&s, 4), p);
+    for (i = 0; i < 8; i++)
+      {
+        gr_pattern_add_note (&s.patterns[p], i * 48, 48, 60 + i, 40 + i * 10);
+        gr_pattern_add_note (&s.patterns[p], 384 + i * 48, 48, 67 - i, 110 - i * 10);
+      }
+    gr_pattern_add_note (&s.patterns[p], 768, 384, 60, 40);
+    gr_pattern_add_note (&s.patterns[p], 1152, 384, 64, 40);
+    gr_pattern_set_ctl (&s.patterns[p], 0, 64, 127);
+    gr_pattern_set_ctl (&s.patterns[p], 378, 64, 0);
+    gr_pattern_set_ctl (&s.patterns[p], 384, 64, 127);
+    gr_pattern_set_ctl (&s.patterns[p], 766, 64, 0);
+    nt = gr_notation_make (&s, t, 4);
+    for (i = 0; nt && i < nt->nev; i++)
+      {
+        cresc += (nt->ev[i].wedge & NW_CRESC) != 0;
+        dim += (nt->ev[i].wedge & NW_DIM) != 0;
+        stop += (nt->ev[i].wedge & NW_STOP) != 0;
+        acc += (nt->ev[i].artic & NA_ACCENT) != 0;
+      }
+    CHECK (nt && cresc == 1 && dim == 1 && stop == 2 && !acc,
+           "Score: a crescendo then a diminuendo (and the loud notes in them aren't accents)");
+    CHECK (nt && nt->parts[0].npedal == 4 && nt->parts[0].pedal[0].down && !nt->parts[0].pedal[1].down
+           && nt->parts[0].pedal[1].bar == 1 && nt->parts[0].pedal[1].start == 0 && nt->parts[0].pedal[2].down
+           && !nt->parts[0].pedal[3].down && nt->parts[0].pedal[3].bar == 2,
+           "the pedal: down, up and down again at the bar line, up");
+    e = nt ? gr_engrave (nt, 0, 60 * EG_SP, NULL, s.tempo) : NULL;
+    CHECK (e && engraving_sane (e, 4) && count_kind (e, EK_GLYPH, GL_PED) == 2 && count_kind (e, EK_GLYPH, GL_PED_UP) == 2,
+           "Ped. and * marks under the staff");
+    {
+      int k, lines = 0;
+      for (k = 0; e && k < e->n; k++)
+        lines += e->it[k].kind == EK_BEAM && e->it[k].w == EG_SP * 4 / 25;
+      CHECK (lines == 4, "two hairpins, drawn");
+    }
+    if (e)
+      gr_engraving_svg (e, "/tmp/groove_test_hairpins.svg", 8, -1);
+    gr_engraving_free (e);
+    gr_notation_free (nt);
+  }
+  {
+    static gr_song back;
+    const char *path = "/tmp/groove_test_hairpins.musicxml", *why;
+    size_t len;
+    char *xml;
+    int r, ok = 0;
+    CHECK (gr_musicxml_export (&s, path) == 0, "MusicXML: hairpins and the pedal export");
+    xml = (char *) slurp (path, &len);
+    CHECK (xml && strstr (xml, "<wedge type=\"crescendo\"") && strstr (xml, "<wedge type=\"diminuendo\"")
+           && strstr (xml, "<wedge type=\"stop\"") && strstr (xml, "<pedal type=\"start\"")
+           && strstr (xml, "<pedal type=\"stop\""), "as wedges and pedal marks");
+    free (xml);
+    gr_song_init (&back);
+    CHECK (gr_score_import (&back, path, 0, &why) == 1 && same_notes (&s, t, &back, 0, 2, 0),
+           "and come back, notes as they were");
+    for (r = 0; r < GR_MAX_REGIONS; r++)
+      if (back.regions[r].used && back.regions[r].pattern >= 0)
+        {
+          const gr_pattern *bp = &back.patterns[back.regions[r].pattern];
+          int k, n64 = 0;
+          for (k = 0; k < bp->nctls; k++)
+            n64 += bp->ctls[k].type == 64;
+          ok += n64;
+        }
+    CHECK (ok == 4, "with the pedal as controller 64");
+    gr_song_free (&back);
+  }
+
+  /* Spelling: a chromatic scale up is sharps, down is flats; in A minor
+     the leading note is G#, and Bb then A is a flat. */
+  gr_song_free (&s);
+  gr_song_init (&s);
+  while (s.ntracks)
+    gr_track_delete (&s, s.ntracks - 1);
+  t = gr_track_add (&s, TRK_INST, "Piano", PATCH_EPIANO);
+  {
+    int p = gr_pattern_new (&s, "Piano", gr_bar_tick (&s, 4)), i, up = 1, down = 1, k;
+    gr_region_add (&s, t, 0, gr_bar_tick (&s, 4), p);
+    for (i = 0; i < 13; i++)
+      gr_pattern_add_note (&s.patterns[p], i * 24, 24, 60 + i, 90);
+    for (i = 0; i < 13; i++)
+      gr_pattern_add_note (&s.patterns[p], 384 + i * 24, 24, 72 - i, 90);
+    /* (C major chords, so the key's clear) */
+    for (i = 0; i < 3; i++)
+      {
+        gr_pattern_add_note (&s.patterns[p], 768, 384, 60 + i * 4 - (i == 2), 90);
+        gr_pattern_add_note (&s.patterns[p], 1152, 384, 60 + i * 4 - (i == 2), 90);
+      }
+    nt = gr_notation_make (&s, t, 4);
+    for (k = 0; nt && k < nt->nev; k++)
+      {
+        const gr_nevent *ev = &nt->ev[k];
+        int b = 0;
+        if (ev->kind != NE_NOTE)
+          continue;
+        while (b + 1 < nt->nbars && nt->parts[0].voice[(b + 1) * GR_NVOICES].first <= k)
+          b++;
+        for (i = 0; i < ev->nheads; i++)
+          {
+            const gr_nhead *h = &nt->hd[ev->head + i];
+            if (h->alter && b == 0 && h->alter != 1)
+              up = 0;
+            if (h->alter && b == 1 && h->alter != -1)
+              down = 0;
+          }
+      }
+    CHECK (nt && up && down, "Spelling: a chromatic scale up in sharps, down in flats");
+    gr_notation_free (nt);
+  }
+
+  /* Instruments: a Bb clarinet written a tone up in D major (for the
+     piece's C), unless asked for concert pitch; a guitar an octave up on
+     a treble-8 clef; a viola on the alto clef. And back from MusicXML as
+     they sound. */
+  gr_song_free (&s);
+  gr_song_init (&s);
+  while (s.ntracks)
+    gr_track_delete (&s, s.ntracks - 1);
+  {
+    static const int gms[3] = { 71, 25, 41 };
+    int tk[3], i, j;
+    for (i = 0; i < 3; i++)
+      {
+        int p;
+        tk[i] = gr_track_add (&s, TRK_INST, i == 0 ? "Clarinet" : i == 1 ? "Guitar" : "Viola", PATCH_LEAD);
+        s.tracks[tk[i]].gm = gms[i];
+        p = gr_pattern_new (&s, "x", gr_bar_tick (&s, 2));
+        gr_region_add (&s, tk[i], 0, gr_bar_tick (&s, 2), p);
+        /* C major: C E G C, F A C, G B D */
+        for (j = 0; j < 8; j++)
+          {
+            static const int tune[8] = { 60, 64, 67, 72, 65, 69, 67, 71 };
+            gr_pattern_add_note (&s.patterns[p], j * 96, 96, tune[j] - (i == 1 ? 12 : 0) - (i == 2 ? 7 : 0), 90);
+          }
+      }
+    nt = gr_notation_make (&s, tk[0], 2);
+    CHECK (nt && nt->parts[0].fifths == 2 && nt->parts[0].transpose == 2
+           && nt->hd[nt->ev[nt->parts[0].voice[0].first].head].step == 1,
+           "Clarinet in Bb: written a tone up (C sounds as D), in D major");
+    gr_notation_free (nt);
+    nt = gr_notation_make_ex (&s, tk[0], 2, GR_NT_CONCERT);
+    CHECK (nt && nt->parts[0].fifths == 0 && nt->parts[0].transpose == 0, "or at concert pitch");
+    gr_notation_free (nt);
+    nt = gr_notation_make (&s, tk[1], 2);
+    CHECK (nt && nt->parts[0].clef[0] == NC_G8 && nt->parts[0].transpose == 12
+           && nt->hd[nt->ev[nt->parts[0].voice[0].first].head].octave == 4,
+           "Guitar: a treble clef with an 8 under it, written an octave up");
+    gr_notation_free (nt);
+    nt = gr_notation_make (&s, tk[2], 2);
+    CHECK (nt && nt->parts[0].clef[0] == NC_C3, "Viola: the alto clef");
+    e = nt ? gr_engrave (nt, 0, 60 * EG_SP, NULL, s.tempo) : NULL;
+    CHECK (e && count_kind (e, EK_GLYPH, GL_C_CLEF) >= 1, "drawn with a C clef");
+    gr_engraving_free (e);
+    gr_notation_free (nt);
+    {
+      static gr_song back;
+      const char *path = "/tmp/groove_test_instruments.musicxml", *why;
+      size_t len;
+      char *xml;
+      CHECK (gr_musicxml_export (&s, path) == 0, "MusicXML: transposing instruments export");
+      xml = (char *) slurp (path, &len);
+      CHECK (xml && strstr (xml, "<transpose><diatonic>-1</diatonic><chromatic>-2</chromatic></transpose>")
+             && strstr (xml, "<clef-octave-change>-1</clef-octave-change>") && strstr (xml, "<sign>C</sign><line>3</line>")
+             && strstr (xml, "<fifths>2</fifths>"), "with their transpositions, clefs and keys");
+      free (xml);
+      gr_song_init (&back);
+      CHECK (gr_score_import (&back, path, 0, &why) == 3, "and come back, three parts");
+      CHECK (same_notes (&s, tk[0], &back, 0, 1, 0), "the clarinet sounding as it did");
+      CHECK (same_notes (&s, tk[1], &back, 1, 1, 0), "the guitar sounding as it did");
+      CHECK (same_notes (&s, tk[2], &back, 2, 1, 0), "the viola sounding as it did");
+      gr_song_free (&back);
+    }
+  }
+
+  /* Tuplets: crotchet triplets over beats 1-2, a quintuplet on beat 3, a
+     sextuplet on beat 4; then a bar of 6/8 with duplets. */
+  gr_song_free (&s);
+  gr_song_init (&s);
+  while (s.ntracks)
+    gr_track_delete (&s, s.ntracks - 1);
+  gr_set_meter (&s, 1, 6, 8);
+  t = gr_track_add (&s, TRK_INST, "Piano", PATCH_EPIANO);
+  {
+    static const int q5t[6] = { 0, 19, 38, 58, 77, 96 };
+    int p = gr_pattern_new (&s, "Piano", gr_bar_tick (&s, 2)), i, k, ctrip = 0, quint = 0, sext = 0, dup = 0;
+    gr_region_add (&s, t, 0, gr_bar_tick (&s, 2), p);
+    for (i = 0; i < 3; i++)
+      gr_pattern_add_note (&s.patterns[p], i * 64, 64, 72 + i, 90);
+    for (i = 0; i < 5; i++)
+      gr_pattern_add_note (&s.patterns[p], 192 + q5t[i], q5t[i + 1] - q5t[i], 72 + i, 90);
+    for (i = 0; i < 6; i++)
+      gr_pattern_add_note (&s.patterns[p], 288 + i * 16, 16, 72 + i, 90);
+    for (i = 0; i < 4; i++)
+      gr_pattern_add_note (&s.patterns[p], 384 + i * 72, 72, 72 + i, 90);
+    nt = gr_notation_make (&s, t, 2);
+    for (k = 0; nt && k < nt->nev; k++)
+      if (nt->ev[k].kind == NE_NOTE && nt->ev[k].tuplet)
+        {
+          const gr_nevent *ev = &nt->ev[k];
+          ctrip += ev->tup_n == 3 && ev->tup_len == 192 && ev->value == NV_QUARTER;
+          quint += ev->tup_n == 5 && ev->tup_m == 4 && ev->value == NV_16TH;
+          sext += ev->tup_n == 6 && ev->tup_m == 4 && ev->value == NV_16TH;
+          dup += ev->tup_n == 2 && ev->tup_m == 3 && ev->value == NV_EIGHTH;
+        }
+    CHECK (ctrip == 3, "Tuplets: three crotchet triplets over two beats");
+    CHECK (quint == 5, "a quintuplet: five semiquavers in a beat");
+    CHECK (sext == 6, "a sextuplet: six semiquavers in a beat, marked 6");
+    CHECK (dup == 4, "duplets in 6/8: two quavers in a dotted crotchet");
+    e = nt ? gr_engrave (nt, 0, 60 * EG_SP, NULL, s.tempo) : NULL;
+    CHECK (e && engraving_sane (e, 2) && count_kind (e, EK_GLYPH, GL_TUPLET_5) == 1 && count_kind (e, EK_GLYPH, GL_TUPLET_6) == 1
+           && count_kind (e, EK_GLYPH, GL_TUPLET_2) == 2 && count_kind (e, EK_GLYPH, GL_TUPLET_3) == 1,
+           "drawn with their numbers: 3, 5, 6, 2 and 2");
+    if (e)
+      gr_engraving_svg (e, "/tmp/groove_test_tuplets.svg", 8, -1);
+    gr_engraving_free (e);
+    gr_notation_free (nt);
+    {
+      static gr_song back;
+      const char *path = "/tmp/groove_test_tuplets.musicxml", *why;
+      CHECK (gr_musicxml_export (&s, path) == 0, "MusicXML: tuplets export");
+      gr_song_init (&back);
+      CHECK (gr_score_import (&back, path, 0, &why) == 1 && same_notes (&s, t, &back, 0, 2, 0),
+             "and come back where they were");
+      gr_song_free (&back);
+    }
+  }
+
+  /* A track with no notes: four bars' rest, as one multi-bar rest (and
+     a box for each bar, for clicks). */
+  gr_song_free (&s);
+  gr_song_init (&s);
+  t = gr_track_add (&s, TRK_INST, "Empty", PATCH_EPIANO);
+  nt = gr_notation_make (&s, t, 4);
+  e = nt ? gr_engrave (nt, 0, 60 * EG_SP, NULL, s.tempo) : NULL;
+  CHECK (e && engraving_sane (e, 4) && count_kind (e, EK_GLYPH, GL_REST_WHOLE) == 0
+         && count_kind (e, EK_GLYPH, GL_TIME_4) == 3,
+         "Score: a track with no notes shows a 4-bar rest (and its 4/4)");
+  gr_engraving_free (e);
+  gr_notation_free (nt);
+  gr_song_free (&s);
+}
+
+
+/* A track of four crotchets a bar, or eight quavers, for the tests below. */
+static int one_part (gr_song *s, const char *name, int gm, int bars)
+{
+  int t, p;
+  gr_song_init (s);
+  while (s->ntracks)
+    gr_track_delete (s, s->ntracks - 1);
+  t = gr_track_add (s, TRK_INST, name, PATCH_EPIANO);
+  s->tracks[t].gm = gm;
+  p = gr_pattern_new (s, name, gr_bar_tick (s, bars));
+  gr_region_add (s, t, 0, gr_bar_tick (s, bars), p);
+  return p;
+}
+
+static void crotchets (gr_song *s, int p, int bar, int a, int b, int c, int d)
+{
+  int n[4], k;
+  n[0] = a, n[1] = b, n[2] = c, n[3] = d;
+  for (k = 0; k < 4; k++)
+    gr_pattern_add_note (&s->patterns[p], bar * GR_BAR + k * GR_PPQ, GR_PPQ, n[k], 80);
+}
+
+static int has_text (const gr_engraving *e, const char *t)
+{
+  int i, n = 0;
+  for (i = 0; e && i < e->n; i++)
+    n += e->it[i].kind == EK_TEXT && !strcmp (e->text + e->it[i].w, t);
+  return n;
+}
+
+/* Exports s, reads it back and checks the notes are the same. xml: the file. */
+static int round_trip (gr_song *s, char **xml)
+{
+  static gr_song back;
+  const char *path = "/tmp/groove_test_rt.musicxml", *why;
+  size_t len;
+  int ok;
+  *xml = NULL;
+  if (gr_musicxml_export (s, path))
+    return 0;
+  gr_song_init (&back);
+  ok = gr_score_import (&back, path, 0, &why) == 1 && same_notes (s, 0, &back, 0, 1, 0);
+  gr_song_free (&back);
+  *xml = (char *) slurp (path, &len);
+  return ok;
+}
+
+/* A glyph g to the right of bar b's box (after its bar line), level with it:
+   a courtesy clef or key at the end of a line. */
+static int after_bar (const gr_engraving *e, int b, int g)
+{
+  int i, j, n = 0;
+  for (i = 0; e && i < e->n; i++)
+    if (e->it[i].kind == EK_BAR && e->it[i].w == b)
+      for (j = 0; j < e->n; j++)
+        if (e->it[j].kind == EK_GLYPH && e->it[j].glyph == g && e->it[j].x0 >= e->it[i].x1
+            && e->it[j].y0 >= e->it[i].y0 && e->it[j].y0 <= e->it[i].y1)
+          n++;
+  return n;
+}
+
+/* The width (in staff spaces, from lo up) at which bar b starts a line, or 0. */
+static int width_breaking_at (const gr_notation *nt, int b, int lo)
+{
+  int w;
+  for (w = lo; w < lo + 60; w++)
+    {
+      gr_engraving *e = gr_engrave (nt, 0, w * EG_SP, NULL, 100);
+      int i, ya = 1, yb = 0;
+      for (i = 0; e && i < e->n; i++)
+        if (e->it[i].kind == EK_BAR && e->it[i].w == b - 1)
+          ya = e->it[i].y0;
+        else if (e->it[i].kind == EK_BAR && e->it[i].w == b)
+          yb = e->it[i].y0;
+      gr_engraving_free (e);
+      if (ya != yb)
+        return w;
+    }
+  return 0;
+}
+
+static void test_signs (void)
+{
+  static gr_song s;
+  gr_notation *nt;
+  gr_engraving *e;
+  char *xml;
+  int p, b, ok;
+
+  /* A tune in C, then a tone up in D for its last verse: the key changes. */
+  p = one_part (&s, "Flute", 73, 20);
+  for (b = 0; b < 20; b++)
+    {
+      static const int c[8] = { 72, 74, 76, 77, 79, 81, 83, 84 }, d[8] = { 74, 76, 78, 79, 81, 83, 85, 86 };
+      int j;
+      for (j = 0; j < 8; j++)
+        gr_pattern_add_note (&s.patterns[p], b * GR_BAR + j * GR_PPQ / 2, GR_PPQ / 2, (b < 8 ? c : d)[(b & 1) ? 7 - j : j], 80);
+    }
+  nt = gr_notation_make (&s, -1, 1);
+  for (b = 0, ok = nt != NULL; ok && b < 20; b++)
+    ok = nt->parts[0].key[b] == (b < 8 ? 0 : 2) && nt->bars[b].fifths == (b < 8 ? 0 : 2) && !nt->bars[b].minor;
+  CHECK (ok, "Keys: a tune in C, then a tone up: two sharps from the bar it goes up");
+  e = nt ? gr_engrave (nt, 0, 70 * EG_SP, NULL, s.tempo) : NULL;
+  CHECK (e && engraving_sane (e, 20) && count_kind (e, EK_GLYPH, GL_SHARP) >= 4 && count_kind (e, EK_GLYPH, GL_SHARP) % 2 == 0
+         && count_kind (e, EK_GLYPH, GL_NATURAL) == 0,
+         "the new key signature drawn where it changes and on each line after");
+  gr_engraving_free (e);
+  b = nt ? width_breaking_at (nt, 8, 40) : 0;
+  e = b ? gr_engrave (nt, 0, b * EG_SP, NULL, s.tempo) : NULL;
+  CHECK (e && engraving_sane (e, 20) && after_bar (e, 7, GL_SHARP) == 2,
+         "when the new key starts a line, it's shown at the end of the line before too");
+  gr_engraving_free (e);
+  gr_notation_free (nt);
+  CHECK (round_trip (&s, &xml) && xml && strstr (xml, "<key><fifths>0</fifths>")
+         && strstr (xml, "<key><fifths>2</fifths>") > strstr (xml, "<key><fifths>0</fifths>"),
+         "in MusicXML, the key change, and the notes come back");
+  free (xml);
+  gr_song_free (&s);
+
+  /* A bar of chromatic notes in a tune in C: no change. */
+  p = one_part (&s, "Flute", 73, 8);
+  for (b = 0; b < 8; b++)
+    if (b == 4)
+      crotchets (&s, p, b, 78, 79, 73, 74);
+    else
+      crotchets (&s, p, b, b & 1 ? 72 : 76, 74, b & 2 ? 77 : 79, 72);
+  nt = gr_notation_make (&s, -1, 1);
+  for (b = 0, ok = nt != NULL; ok && b < 8; b++)
+    ok = nt->parts[0].key[b] == 0;
+  CHECK (ok, "but a bar of sharps in a tune in C doesn't change the key");
+  gr_notation_free (nt);
+  gr_song_free (&s);
+
+  /* A cello going high for four bars: tenor clef, then back to bass. */
+  p = one_part (&s, "Cello", 42, 12);
+  for (b = 0; b < 12; b++)
+    if (b >= 4 && b < 8)
+      crotchets (&s, p, b, 64, 67, 69, 65);
+    else
+      crotchets (&s, p, b, 36, 43, 48, 40);
+  nt = gr_notation_make (&s, -1, 1);
+  for (b = 0, ok = nt != NULL; ok && b < 12; b++)
+    ok = nt->parts[0].clefs[b * 2] == (b >= 4 && b < 8 ? NC_C4 : NC_F) && !nt->parts[0].ottava[b * 2];
+  CHECK (ok && nt->parts[0].clef[0] == NC_F, "Clefs: a cello part going high changes to the tenor clef for it, then back");
+  e = nt ? gr_engrave (nt, 0, 70 * EG_SP, NULL, s.tempo) : NULL;
+  CHECK (e && engraving_sane (e, 12) && count_kind (e, EK_GLYPH, GL_C_CLEF_SMALL) + count_kind (e, EK_GLYPH, GL_C_CLEF) >= 1
+         && count_kind (e, EK_GLYPH, GL_F_CLEF_SMALL) + count_kind (e, EK_GLYPH, GL_F_CLEF) >= 2,
+         "drawn as a small clef where it changes");
+  gr_engraving_free (e);
+  b = nt ? width_breaking_at (nt, 4, 30) : 0;
+  e = b ? gr_engrave (nt, 0, b * EG_SP, NULL, s.tempo) : NULL;
+  CHECK (e && engraving_sane (e, 12) && after_bar (e, 3, GL_C_CLEF_SMALL) == 1,
+         "and at the end of the line before, when it changes at the start of one");
+  gr_engraving_free (e);
+  gr_notation_free (nt);
+  CHECK (round_trip (&s, &xml) && xml && strstr (xml, "<sign>C</sign><line>4</line>"), "and a clef change in MusicXML");
+  free (xml);
+  gr_song_free (&s);
+
+  /* A piano tune going three octaves up for two bars: a 15ma line; an
+     octave and more up, an 8va; and one going up and down again in the
+     middle of bars: the line starts and ends there. */
+  {
+    static const struct { int hi[4], ott; } cases[] = { { { 96, 100, 103, 98 }, 2 }, { { 88, 91, 95, 91 }, 1 } };
+    int c;
+    for (c = 0; c < 2; c++)
+      {
+        p = one_part (&s, "Piano", 0, 8);
+        for (b = 0; b < 8; b++)
+          {
+            if (b >= 3 && b < 5)
+              crotchets (&s, p, b, cases[c].hi[0], cases[c].hi[1], cases[c].hi[2], cases[c].hi[3]);
+            else
+              crotchets (&s, p, b, 72, 76, 79, 74);
+            gr_pattern_add_note (&s.patterns[p], b * GR_BAR, GR_BAR, 48, 70);
+          }
+        nt = gr_notation_make (&s, -1, 1);
+        for (b = 0, ok = nt != NULL && nt->parts[0].staves == 2; ok && b < 8; b++)
+          ok = nt->parts[0].ottava[b * 2] == (b >= 3 && b < 5 ? cases[c].ott : 0) && !nt->parts[0].ottava[b * 2 + 1]
+            && !nt->parts[0].ott_start[b * 2] && !nt->parts[0].ott_end[b * 2];
+        CHECK (ok, c ? "8va: a passage an octave and more above the staff goes under an 8va line"
+               : "15ma: one three octaves up goes under a 15ma line");
+        e = nt ? gr_engrave (nt, 0, 70 * EG_SP, NULL, s.tempo) : NULL;
+        CHECK (e && engraving_sane (e, 8) && count_kind (e, EK_GLYPH, c ? GL_OTTAVA_8VA : GL_QUINDICESIMA_A) >= 1,
+               "drawn over the staff");
+        gr_engraving_free (e);
+        gr_notation_free (nt);
+        CHECK (round_trip (&s, &xml) && xml && strstr (xml, c ? "<octave-shift type=\"down\" size=\"8\"/>" : "<octave-shift type=\"down\" size=\"15\"/>")
+               && strstr (xml, "<octave-shift type=\"stop\"") && strstr (xml, c ? "<step>B</step><octave>6</octave>" : "<step>C</step><octave>7</octave>"),
+               "in MusicXML, an octave-shift with the notes at the pitch they sound, and they come back the same");
+        free (xml);
+        gr_song_free (&s);
+      }
+    p = one_part (&s, "Piano", 0, 8);
+    for (b = 0; b < 8; b++)
+      {
+        if (b == 3)
+          crotchets (&s, p, b, 72, 76, 88, 91);
+        else if (b == 4)
+          crotchets (&s, p, b, 95, 91, 93, 95);
+        else if (b == 5)
+          crotchets (&s, p, b, 91, 88, 76, 72);
+        else
+          crotchets (&s, p, b, 72, 76, 79, 74);
+        gr_pattern_add_note (&s.patterns[p], b * GR_BAR, GR_BAR, 48, 70);
+      }
+    nt = gr_notation_make (&s, -1, 1);
+    for (b = 0, ok = nt != NULL; ok && b < 8; b++)
+      ok = nt->parts[0].ottava[b * 2] == (b >= 3 && b < 6);
+    CHECK (ok && nt->parts[0].ott_start[3 * 2] == 2 * GR_PPQ && nt->parts[0].ott_end[5 * 2] == 2 * GR_PPQ,
+           "an 8va line can start and end in the middle of a bar, at the notes that need it");
+    e = nt ? gr_engrave (nt, 0, 70 * EG_SP, NULL, s.tempo) : NULL;
+    CHECK (e && engraving_sane (e, 8) && count_kind (e, EK_GLYPH, GL_OTTAVA_8VA) >= 1, "(drawn from the note it starts at)");
+    if (e)
+      gr_engraving_svg (e, "/tmp/groove_test_8va.svg", 8, -1);
+    gr_engraving_free (e);
+    gr_notation_free (nt);
+    CHECK (round_trip (&s, &xml), "and its notes come back the same from MusicXML");
+    free (xml);
+    gr_song_free (&s);
+  }
+
+  /* Repeats: AB AB, C, D three times, then EFG H EFG I (first and second endings). */
+  p = one_part (&s, "Flute", 73, 16);
+  crotchets (&s, p, 0, 72, 74, 76, 77);
+  crotchets (&s, p, 1, 79, 77, 76, 74);
+  crotchets (&s, p, 2, 72, 74, 76, 77);
+  crotchets (&s, p, 3, 79, 77, 76, 74);
+  crotchets (&s, p, 4, 72, 72, 79, 79);
+  for (b = 5; b < 8; b++)
+    crotchets (&s, p, b, 81, 81, 79, 79);
+  for (b = 8; b < 16; b += 4)
+    {
+      crotchets (&s, p, b, 77, 77, 76, 76);
+      crotchets (&s, p, b + 1, 74, 74, 72, 72);
+      crotchets (&s, p, b + 2, 76, 77, 79, 81);
+    }
+  crotchets (&s, p, 11, 79, 77, 76, 74);
+  crotchets (&s, p, 15, 72, 72, 72, 72);
+  nt = gr_notation_make_ex (&s, -1, 1, GR_NT_REPEATS);
+  {
+    static const int bar_of[16] = { 0, 1, 0, 1, 2, 3, 3, 3, 4, 5, 6, 7, 4, 5, 6, 8 };
+    for (b = 0, ok = nt && nt->nbars == 9 && nt->nsong == 16; ok && b < 16; b++)
+      ok = nt->bar_of[b] == bar_of[b];
+    CHECK (ok, "Repeats: music played again written once (16 bars in 9)");
+  }
+  CHECK (nt && nt->bars[0].rep == NR_START && nt->bars[1].rep == NR_END && nt->bars[1].times == 2
+         && nt->bars[3].rep == (NR_START | NR_END) && nt->bars[3].times == 3 && nt->bars[4].rep == NR_START
+         && nt->bars[7].ending == 1 && nt->bars[7].rep == NR_END && nt->bars[7].ending_stop == 1
+         && nt->bars[8].ending == 2 && nt->bars[8].ending_stop == 2 && nt->bars[7].start == 11 * GR_BAR,
+         "two bars twice, a bar three times, and three bars with first and second endings");
+  e = nt ? gr_engrave (nt, 0, 70 * EG_SP, NULL, s.tempo) : NULL;
+  CHECK (e && engraving_sane (e, 9) && has_text (e, "Play 3 times") == 1 && has_text (e, "1.") == 1 && has_text (e, "2.") == 1,
+         "with \"Play 3 times\" and the endings numbered");
+  gr_engraving_free (e);
+  gr_notation_free (nt);
+  nt = gr_notation_make (&s, -1, 1);
+  CHECK (nt && nt->nbars == 16 && nt->bar_of[15] == 15, "(written out in full without them)");
+  gr_notation_free (nt);
+  CHECK (round_trip (&s, &xml) && xml && strstr (xml, "<repeat direction=\"backward\" times=\"3\"/>")
+         && strstr (xml, "<ending number=\"1\" type=\"start\">1.</ending>") && strstr (xml, "<ending number=\"2\" type=\"discontinue\"/>"),
+         "in MusicXML too, played out note for note when read back");
+  free (xml);
+  gr_song_free (&s);
+}
+
 int main (int argc, char **argv)
 {
   test_loops ();
@@ -1720,6 +2781,11 @@ int main (int argc, char **argv)
   test_drum_keys ();
   test_track_midi ();
   test_controllers ();
+  test_unzip_xml ();
+  test_score_import ();
+  test_musicxml_export ();
+  test_engrave ();
+  test_signs ();
   if (getenv ("GROOVE_TEST_SOUNDFONT") && *getenv ("GROOVE_TEST_SOUNDFONT"))
     test_gm_play (getenv ("GROOVE_TEST_SOUNDFONT"));
   if (getenv ("GROOVE_TEST_SOUNDFONT") && *getenv ("GROOVE_TEST_SOUNDFONT"))

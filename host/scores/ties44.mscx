@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- MuseScore 4.4's layout: a tie is written on the note it ends on, and
+     voltas are listed after the staves. -->
+<museScore version="4.40">
+  <Score>
+    <Division>480</Division>
+    <Part id="1">
+      <Staff id="1"/>
+      <trackName></trackName>
+      <Instrument id="violin">
+        <InstrumentLabel><longName>Violin</longName></InstrumentLabel>
+        <Channel><program value="40"/></Channel>
+        </Instrument>
+      </Part>
+    <Staff id="1">
+      <Measure>
+        <eid>A_A</eid>
+        <startRepeat/>
+        <voice>
+          <TimeSig><eid>B_B</eid><sigN>4</sigN><sigD>4</sigD></TimeSig>
+          <Chord><eid>C_C</eid><durationType>half</durationType><Note><eid>D_D</eid><pitch>60</pitch><tpc>14</tpc></Note></Chord>
+          <Chord><eid>E_E</eid><durationType>half</durationType>
+            <Note><eid>F_F</eid><Tie><startElement>D_D</startElement><endElement>F_F</endElement><eid>G_G</eid></Tie><pitch>60</pitch><tpc>14</tpc></Note>
+            </Chord>
+          </voice>
+        </Measure>
+      <Measure>
+        <eid>H_H</eid>
+        <endRepeat>2</endRepeat>
+        <voice>
+          <Chord><eid>I_I</eid><durationType>whole</durationType><Note><eid>J_J</eid><pitch>62</pitch><tpc>16</tpc></Note></Chord>
+          </voice>
+        </Measure>
+      <Measure>
+        <eid>K_K</eid>
+        <voice>
+          <Chord><eid>L_L</eid><durationType>half</durationType><Note><eid>M_M</eid><pitch>64</pitch><tpc>18</tpc><velocity>100</velocity></Note></Chord>
+          <Chord><eid>N_N</eid><durationType>half</durationType><small>1</small><Note><eid>O_O</eid><pitch>65</pitch><tpc>13</tpc><play>0</play></Note></Chord>
+          </voice>
+        </Measure>
+      </Staff>
+    <SpannerMap>
+      <Volta><beginText>1.</beginText><startElement>H_H</startElement><endElement>H_H</endElement><endings>1</endings></Volta>
+      <Volta><beginText>2.</beginText><startElement>K_K</startElement><endElement>K_K</endElement><endings>2</endings></Volta>
+      </SpannerMap>
+    </Score>
+  </museScore>

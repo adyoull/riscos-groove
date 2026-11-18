@@ -73,10 +73,10 @@ int midiin_present (void)
 }
 
 /* Register with MIDI Support, if it's there and we haven't. MIDI Support
-   shows the version in hundredths (30: "0:30", for 0.3) and the date as
+   shows the version in hundredths (40: "0:40", for 0.4) and the date as
    given, so it's given the way the other drivers give theirs ("2 Nov 2026"
    rather than "02-Nov-2026"). */
-#define MS_VERSION 30
+#define MS_VERSION 40
 static void ms_register (void)
 {
   int n = -1, h = 0;

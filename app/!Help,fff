@@ -1,4 +1,4 @@
-Groove 0.3 for RISC OS
+Groove 0.4 for RISC OS
 ============================
 
 A music studio: drag loops into a song, play instruments
@@ -38,7 +38,8 @@ Keys (in any Groove window)
   A W S E D F T G Y H U J K O L P ;   play notes (A is C)
   Z / X     octave down / up     C / V      velocity down / up
   Ctrl-Z    undo                 Ctrl-Y     redo
-  F7 loops  F8 editor  F9 keyboard  Ctrl-S save
+  F6 score  F7 loops  F8 editor  F9 keyboard  Ctrl-S save
+  Ctrl-P    print the selected track's score
 
 Time signature
   Menu > Song > Time signature: 2/4 to 12/8, from the bar the playhead
@@ -111,11 +112,56 @@ SoundFont sounds (with !SoftMIDI)
   seconds). Without !SoftMIDI those tracks play Groove's nearest sound.
 
 Files
-  Save (Ctrl-S or Menu > Song > Save), Export as WAV and Export as MIDI
-  use a normal save box: drag the icon to a directory. Drop a song, a WAV,
-  a MIDI file or Maestro music on Groove's icon or song window to load or
-  import it (MIDI and Maestro files become a track per part or channel,
-  from the bar you drop them on).
+  Save (Ctrl-S or Menu > Song > Save), Export as WAV, Export as MIDI and
+  Export as MusicXML use a normal save box: drag the icon to a directory.
+  Drop a song, a WAV, a MIDI file, a MuseScore or MusicXML score or
+  Maestro music on Groove's icon or song window to load or import it
+  (MIDI files, scores and Maestro music become a track per part or
+  channel, from the bar you drop them on).
+
+MuseScore and MusicXML
+  Groove reads MuseScore files (.mscz, .mscx; MuseScore 2 to 4) and
+  MusicXML (.musicxml, .xml, .mxl), whatever their filetype: files from a
+  PC or a USB stick are often Data. Repeats and endings are played out,
+  ties joined; tuplets, dynamics, transposing instruments and 8va lines
+  are kept. Grace notes, ornaments, D.C./D.S. and lyrics aren't.
+  Song > Export as MusicXML writes the song for MuseScore (and Sibelius,
+  Dorico, Finale): note values, ties, triplets, two staves and a second
+  voice where they're needed, a key signature worked out from the notes,
+  drums on a percussion staff. Save it as Name/musicxml for a PC.
+
+Score window
+  F6 (or Menu > Score) shows the selected track written out as music,
+  the same way as the MusicXML export. The bar playing is lit, and the
+  window follows it if Follow playhead is on. Click a bar to move the
+  playhead there; + and - change the size. It's for reading: edit notes
+  in the Editor.
+  How it's played is marked from the notes: dynamics (pp to ff) from
+  their velocities, accents on notes hit hard, staccato for notes let go
+  early, slurs over notes played legato; drums in two voices (hands
+  stems up, feet stems down); hairpins where the playing gets steadily
+  louder or softer; Ped. and * from the sustain pedal (controller 64).
+  MusicXML export writes them too, and a score's pedal marks come in as
+  the sustain pedal.
+  Song > Print score (Ctrl-P) prints the selected track's score on the
+  printer set up in !Printers, laid out to its paper, page by page.
+  Menu over the Score window: Full score shows every track at once, a
+  staff per part, named, with braces for pianos. Transposing instruments
+  are written as their players read them (B flat clarinet a tone up,
+  guitar an octave up and so on), each part with its own key; Concert
+  pitch shows them as they sound. Guitar has the treble-8 clef, viola
+  the alto clef, a high cello part the tenor clef. Bars of rest in a row
+  are one bar with the count over it. Tuplets: triplets (quaver and
+  crotchet), quintuplets, sextuplets, duplets in 6/8. Print score prints
+  what the window shows; Print parts prints each track as a part, each
+  on new pages, numbered at the foot.
+  Music played again straight after is written once in repeat signs
+  ("Play 4 times"; first and second endings); Menu > Repeats turns them
+  off. The key signature changes for a long passage in a new key; a
+  part going high or low changes clef (cello to tenor clef) or goes
+  under an 8va, 8vb, 15ma or 15mb line (starting and ending at the
+  notes that need it). A key or clef changing at the start of a line
+  is shown at the end of the line before too.
 
 Maestro music
   Groove plays Maestro files as Maestro does: clefs, key signatures,

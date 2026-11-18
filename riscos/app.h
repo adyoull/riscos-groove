@@ -18,7 +18,7 @@
 #include "layout.h"
 
 #define APP_NAME     "Groove"
-#define APP_VERSION  "0.3"
+#define APP_VERSION  "0.4"
 #define APP_DATE     "07-Nov-2026"
 #define TASK_WORD    0x4B534154
 
@@ -26,6 +26,8 @@
 #define FILETYPE_WAVE  0xFB1
 #define FILETYPE_MIDI  0xFD4
 #define FILETYPE_MAESTRO 0xAF1
+#define FILETYPE_XML   0xF80       /* MusicXML is saved as XML */
+#define FILETYPE_SCORE 0x1000      /* (not a filetype: a MuseScore or MusicXML file, by its contents) */
 
 /* SWIs the GCCSDK headers may not name. */
 #ifndef SharedSound_InstallHandler
@@ -64,8 +66,8 @@ typedef struct
   gr_history *hist;             /* Undo and Redo */
   int count_in, merge;          /* recording options (main menu) */
 
-  int w_main, w_tool, w_edit, w_loops, w_keys, w_save;
-  int main_open, edit_open, loops_open, keys_open;
+  int w_main, w_tool, w_edit, w_loops, w_keys, w_save, w_score;
+  int main_open, edit_open, loops_open, keys_open, score_open;
 
   int sel_track, sel_region;    /* -1 = none */
   lay_view view;                /* the arranger's timeline */
@@ -113,6 +115,27 @@ void app_redraw_all (int window);
 void app_redraw_work (int window, int x0, int y0, int x1, int y1);
 void app_main_menu (int x, int y);
 void app_set_extent (int window, int w, int h);
+
+/* score.c: the Score window (F6), the selected track as written music */
+int  score_create (void);
+void score_open (void);
+void score_open_request (int *b);
+void score_close (void);
+void score_redraw (int *b);
+void score_click (int *b);
+int  score_key (int code);
+void score_tick (void);                        /* on null events: the playing bar, the selection */
+void score_changed (void);                     /* the song changed */
+void score_print (void);                       /* Song > Print score, Ctrl-P */
+void score_print_parts (void);                 /* every part, each from a new page */
+int  score_full (void);                        /* showing the full score (else the selected track) */
+void score_set_full (int on);
+int  score_concert (void);                     /* transposing instruments at concert pitch */
+void score_set_concert (int on);
+int  score_repeats (void);                     /* music played again written once, in repeats */
+void score_set_repeats (int on);
+void app_score_menu (int x, int y);            /* the Score window's menu */
+int  score_zoom (void);                        /* percent */
 
 /* arrange.c */
 int  arrange_create (void);
@@ -212,7 +235,7 @@ int  app_gm_ensure (void);
 void arrange_import (const char *path, int type, int tick);   /* MIDI or Maestro */
 void arrange_set_extent (void);    /* the work area, from the song's length and the zoom */
 void arrange_sync_hscroll (void);  /* the timeline moved: the scroll bar follows */
-void savebox_open (int filetype);              /* FILETYPE_SONG, _WAVE or _MIDI */
+void savebox_open (int filetype);              /* FILETYPE_SONG, _WAVE, _MIDI or _XML */
 void savebox_click (int *b);
 int  savebox_key (int *b);
 void savebox_drag_done (void);

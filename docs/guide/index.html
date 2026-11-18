@@ -52,7 +52,7 @@ a { color:#1f5fa8; }
 <h1>Groove User Guide</h1>
 <p>Making music on RISC OS</p>
 <p>Start here if you've never made music on a computer before. If you have, the Technical Stuff boxes and Chapter 19 are for you.</p>
-<span class="badge">Groove 0.3</span>
+<span class="badge">Groove 0.4</span>
 </div>
 </header>
 <main>
@@ -68,7 +68,7 @@ a { color:#1f5fa8; }
 <li><a href="#part3">Part III: Sounds and the Mix</a>
 <ul><li><a href="#ch11">11. Tracks and the mix</a></li><li><a href="#ch12">12. Choosing sounds, including SoundFont sounds</a></li></ul></li>
 <li><a href="#part4">Part IV: Files</a>
-<ul><li><a href="#ch13">13. Saving and opening songs</a></li><li><a href="#ch14">14. Exporting a WAV file</a></li><li><a href="#ch15">15. MIDI files and Maestro music</a></li><li><a href="#ch16">16. Using your own recordings</a></li></ul></li>
+<ul><li><a href="#ch13">13. Saving and opening songs</a></li><li><a href="#ch14">14. Exporting a WAV file</a></li><li><a href="#ch15">15. MIDI files, MuseScore and Maestro</a></li><li><a href="#ch16">16. Using your own recordings</a></li></ul></li>
 <li><a href="#part5">Part V: The Part of Tens</a>
 <ul><li><a href="#ch17">17. Ten keys to learn first</a></li><li><a href="#ch18">18. Ten problems and what to do about them</a></li><li><a href="#ch19">19. Ten things for experienced users</a></li></ul></li>
 <li><a href="#appA">Appendix: keys, mouse and menus</a></li>
@@ -87,7 +87,7 @@ a { color:#1f5fa8; }
 <p>The pictures are screenshots of Groove running on RISC OS 5.</p>
 
 <h4>This is an early version</h4>
-<p>Groove 0.3 is an early version. It's still being tested, so you may come across bugs. If you change something by mistake, <kbd>Ctrl</kbd>+<kbd>Z</kbd> (Undo) takes it back (<a href="#ch3">Chapter 3</a>), but save your song now and then as well (<a href="#ch13">Chapter 13</a>).</p>
+<p>Groove 0.4 is an early version. It's still being tested, so you may come across bugs. If you change something by mistake, <kbd>Ctrl</kbd>+<kbd>Z</kbd> (Undo) takes it back (<a href="#ch3">Chapter 3</a>), but save your song now and then as well (<a href="#ch13">Chapter 13</a>).</p>
 
 <h4>What we assume you know</h4>
 <p>Not much. You should know the three mouse buttons (<b>Select</b> on the left, <b>Menu</b> in the middle, <b>Adjust</b> on the right), and how to drag a file from a Filer window into a program. You don't need to know anything about music.</p>
@@ -114,6 +114,7 @@ a { color:#1f5fa8; }
 <li><b>Loops:</b> 18 ready-made loops (drums, bass, keys and lead) that you drag into your song. They're played in your song's key.</li>
 <li><b>Drums:</b> draw a beat on a grid of eight drums and sixteen steps a bar, or on all 128 MIDI drum keys. Two drum kits.</li>
 <li><b>Notes:</b> draw, move and delete notes in a piano roll of all 128 MIDI notes; select several to move, copy, transpose or make louder together.</li>
+<li><b>Score:</b> see any track written out as music, on staves, and follow it as it plays.</li>
 <li><b>Controllers:</b> draw modulation, volume, pan, sustain, pitch bend and program changes in a lane under the notes.</li>
 <li><b>Musical typing:</b> play your computer keyboard like a piano, chords included, or a MIDI keyboard.</li>
 <li><b>MIDI out:</b> let a MIDI keyboard, sound module or software synth play any track, on the channel, bank and program you choose.</li>
@@ -123,7 +124,7 @@ a { color:#1f5fa8; }
 <li><b>Seven instruments</b> of Groove's own: Electric Piano, Synth Bass, Warm Pad, Square Lead, Plucked Guitar, Drawbar Organ and Glass Bells.</li>
 <li><b>SoundFont sounds:</b> with !SoftMIDI installed, any track can use one of 128 General MIDI instruments or 8 drum kits instead.</li>
 <li><b>Mixing:</b> volume, pan, mute and solo for each track, a master volume, and a touch of reverb.</li>
-<li><b>Files:</b> save songs; export a WAV of your song; import and export MIDI files; play Maestro music; bring in WAV recordings.</li>
+<li><b>Files:</b> save songs; export a WAV of your song; import and export MIDI files; open MuseScore scores and MusicXML, and write songs out as MusicXML for MuseScore; play Maestro music; bring in WAV recordings.</li>
 <li><b>Any time signature:</b> 3/4, 6/8 and the rest, changing part-way through a song if you like.</li>
 </ul>
 
@@ -143,7 +144,7 @@ a { color:#1f5fa8; }
 
 <h4>Installing</h4>
 <ol class="steps">
-<li>Unzip <code>Groove-0.3.zip</code> with SparkFS or PackMan's unzip, so the files keep their RISC OS file types.</li>
+<li>Unzip <code>Groove-0.4.zip</code> with SparkFS or PackMan's unzip, so the files keep their RISC OS file types.</li>
 <li>Drag <b>!Groove</b> to wherever you keep your applications, for example your <code>Apps</code> directory.</li>
 <li>If you want SoundFont sounds, install <b>!SoftMIDI</b> as well, and open the directory it's in once, so the Filer sees it.</li>
 </ol>
@@ -183,6 +184,7 @@ a { color:#1f5fa8; }
 <tr><td><b>Loops</b></td><td>Ready-made loops to drag into your song.</td><td>Opens at start; <kbd>F7</kbd>, or the <b>Loops</b> button.</td></tr>
 <tr><td><b>Editor</b></td><td>The notes in one region: a drum grid or a piano roll.</td><td><kbd>F8</kbd>, the <b>Edit</b> button, or double-click a region.</td></tr>
 <tr><td><b>Keyboard</b></td><td>Shows the keys for musical typing; you can click its keys too.</td><td><kbd>F9</kbd>, the <b>Keys</b> button, or <b>Musical typing</b> in the main menu.</td></tr>
+<tr><td><b>Score</b></td><td>The selected track written out as music (<a href="#score">Chapter 15</a>).</td><td><kbd>F6</kbd>, or <b>Score</b> in the main menu.</td></tr>
 </table>
 
 <h4>The toolbar</h4>
@@ -545,7 +547,7 @@ a { color:#1f5fa8; }
 <p>To make a file anyone can play, choose <b>Song &rarr; Export as WAV</b>, then save it as you would a song. Groove plays the whole song through, from the start to the end of the last region plus two seconds for the echoes to die away, and writes a 16-bit stereo WAV at 44.1&nbsp;kHz. Cycle is ignored; muted tracks stay silent.</p>
 <p>If you've saved the song, the name in the save box starts as the song's full name with <code>_mix</code> on the end (otherwise just <code>Mix</code>), so the WAV goes next to the song unless you drag it somewhere else.</p>
 
-<h3 class="chapter" id="ch15"><span>15</span> MIDI files and Maestro music</h3>
+<h3 class="chapter" id="ch15"><span>15</span> MIDI files, MuseScore and Maestro</h3>
 
 <h4>Importing a MIDI file</h4>
 <p>Drag a MIDI file (file type &amp;FD4) onto the song window, at the bar where you want it to start, or onto Groove's icon bar icon to start at bar 1. Groove makes a new track for each part, named after its instrument, and cuts the music into 4-bar regions you can edit. The drum part becomes a drum track, keeping every drum key (<a href="#ch7">Chapter 7</a>).</p>
@@ -556,6 +558,96 @@ a { color:#1f5fa8; }
 
 <h4>Exporting a MIDI file</h4>
 <p>Choose <b>Song &rarr; Export as MIDI</b> and save it as you would a song (the name starts as the song's name with <code>_midi</code> on the end, or <code>MIDI</code>). You get a standard MIDI file with a part for each drum and instrument track, which other music programs can open. Groove's own sounds are given the nearest General MIDI instrument, and the song's time signatures go in too, with each track's channel, bank and program, and its controller events.</p>
+
+<h4 id="musescore">MuseScore and MusicXML</h4>
+<p>MuseScore is the free music-writing program many schools use. Groove reads its scores, and writes songs back as MusicXML, the format MuseScore, Sibelius, Dorico and Finale all share. So you can bring a piece home from school, play it and change it in Groove, and take it back.</p>
+
+<p><b>Bringing a score into Groove.</b> Drag the file onto the song window, at the bar where you want it to start, or onto Groove's icon bar icon to start at bar 1. Groove reads:</p>
+<ul>
+<li><b>MuseScore files</b>: <code>.mscz</code> (as MuseScore saves them) and <code>.mscx</code>, from MuseScore 2, 3 and 4.</li>
+<li><b>MusicXML</b>: <code>.musicxml</code> and <code>.xml</code>, and compressed MusicXML, <code>.mxl</code>.</li>
+</ul>
+<p>Files copied from a PC or a USB stick often have no RISC OS file type (they show as Data), or come up as XML or an archive. That's fine: Groove looks inside the file to see what it is.</p>
+<figure><img src="images/score-import.png" alt="A MuseScore file imported"><figcaption>The first movement of the Moonlight Sonata, saved by MuseScore as Moonlight.mscz, dropped on a new song: a Piano track at the score's tempo, the left hand's octaves under the triplets.</figcaption></figure>
+<p>Each instrument in the score (each part) becomes a track, named after it, with its instrument as a SoundFont sound (<a href="#ch12">Chapter 12</a>); a drum part becomes a drum track. A piano's two staves go on one track. Groove plays the score the way MuseScore does:</p>
+<ul>
+<li><b>Repeats</b> are played out, with first and second endings, so the track is the music as you'd hear it.</li>
+<li><b>Tied notes</b> become one long note; <b>triplets</b> and other tuplets, dotted notes and pickup bars keep their timing.</li>
+<li><b>Dynamics</b> (<i>p</i>, <i>mf</i>, <i>ff</i>...) set how loud the notes are.</li>
+<li><b>Transposing instruments</b> (a B&#9837; clarinet or trumpet) and 8<sup>va</sup> lines sound at the right pitch.</li>
+<li>If the song was empty, it takes the score's tempo and time signatures, and its empty tracks make way.</li>
+</ul>
+<p>What doesn't come across: grace notes, trills and other ornaments, D.C. and D.S. jumps, lyrics, chord symbols and the layout of the page. Groove holds the notes; the score stays in MuseScore.</p>
+
+<p><b>Writing a song for MuseScore.</b> Choose <b>Song &rarr; Export as MusicXML</b> and save it as you would a song. The name ends in <code>/musicxml</code>, so on a PC or a USB stick it's a <code>.musicxml</code> file, which MuseScore opens with <b>File &rarr; Open</b>. Every drum and instrument track with notes becomes a part, named after the track.</p>
+<figure><img src="images/song-menu.png" alt="The Song menu"><figcaption>Song &rarr; Export as MusicXML.</figcaption></figure>
+<figure><img src="images/savebox-musicxml.png" alt="Saving MusicXML"><figcaption>Saved as XML, ready for a USB stick.</figcaption></figure>
+<p>A piano roll doesn't say how its notes should be written, so Groove works it out:</p>
+<ul>
+<li><b>Note values.</b> Notes are written as quarters, eighths, dotted notes and so on, each starting where it may in the bar, with ties where a note carries on over a beat or a bar line. Notes slightly off the beat (played in, rather than drawn) are put on the nearest 32nd note.</li>
+<li><b>Triplets.</b> A beat whose notes fit triplets better is written as triplets.</li>
+<li><b>Staves and voices.</b> An instrument that plays both well above and well below middle C, like a piano, gets two staves. A note held while others move gets a second voice, so it's written as one long note rather than cut up.</li>
+<li><b>The key.</b> Groove works out the key from the notes, major or minor, and writes its key signature, with sharps or flats to suit.</li>
+<li><b>Drums</b> go on a percussion staff, each drum where MuseScore's drum set puts it.</li>
+<li><b>The song</b>: its tempo, time signatures, each track's instrument and how loud each note is.</li>
+</ul>
+<figure><img src="images/musicxml-in-musescore.png" alt="A Groove song in MuseScore"><figcaption>A song made from Groove's loops, exported as MusicXML and opened in MuseScore.</figcaption></figure>
+<div class="box tip"><b class="label">TIP</b>For the neatest score, draw notes on the grid rather than playing them in, or fix a played part's timing first. MuseScore can tidy the result further: its <b>Tools</b> menu can regroup rhythms, and you can change any note's spelling there.</div>
+<h4 id="score">The Score window</h4>
+<p>To see a track as written music, select it (click its name) and press <kbd>F6</kbd>, or choose <b>Score</b> from the main menu. The Score window shows the track on staves, written out the same way as an exported MusicXML file (above): note values, ties, triplets, two staves for a piano, a key signature, drums on a percussion staff. Select another track and the window follows it; change a note and the score changes with it.</p>
+<figure><img src="images/score-window.png" alt="The Score window"><figcaption>The Moonlight Sonata in the Score window, playing: the bar being played is lit, and the window has scrolled to keep it in view.</figcaption></figure>
+<ul>
+<li><b>Playing.</b> The bar being played is lit in yellow. With <b>Follow playhead</b> on (main menu), the window scrolls to keep it in view.</li>
+<li><b>Clicking a bar</b> moves the playhead to its start, so <kbd>Space</kbd> plays from there.</li>
+<li><b>Size.</b> The music is drawn smoothly (anti-aliased, like the desktop's text), so it reads well even small. <kbd>+</kbd> and <kbd>&minus;</kbd> make it bigger or smaller. Make the window wider or narrower and the lines of music are laid out again to fit it.</li>
+</ul>
+<p><b>How it's played</b> is written in too, from the notes themselves:</p>
+<ul>
+<li><b>Dynamics</b> (<i>pp</i>, <i>p</i>, <i>mp</i>, <i>mf</i>, <i>f</i>, <i>ff</i>...) from how hard the notes are played, a bar at a time, marked where it changes.</li>
+<li><b>Hairpins</b>: a crescendo (&lt;) where the notes get steadily louder, a diminuendo (&gt;) where they get softer, ending at the dynamic they reach.</li>
+<li><b>Accents</b> (&gt;) on notes played much harder than those round them.</li>
+<li><b>Staccato.</b> A note let go well before the next one starts is written lasting until it, with a dot, rather than as a short note and a rest.</li>
+<li><b>Slurs</b> over notes played legato, each held a little into the next (as you play a smooth phrase on a keyboard).</li>
+<li><b>The sustain pedal</b>: <i>Ped.</i> where it goes down and &lowast; where it comes up, from the track's sustain pedal (controller 64: played on a MIDI keyboard's pedal, or drawn in the controller lane, <a href="#ch8">Chapter 8</a>).</li>
+<li><b>Drums</b> are in two voices, as drummers read them: hands (cymbals, snare, toms) with their stems up, feet (bass drum and pedal hi-hat) with their stems down.</li>
+</ul>
+<figure><img src="images/score-marks.png" alt="Slur, staccato, accent and dynamics"><figcaption>A tune played in: the first bar legato (a slur), the second short (staccato) with one note hit hard (an accent), getting louder from <i>p</i> to <i>f</i>.</figcaption></figure>
+<figure><img src="images/score-hairpins.png" alt="Hairpins and pedal marks"><figcaption>Getting louder, then softer, with the sustain pedal held a bar at a time.</figcaption></figure>
+<p>All of these go into an exported MusicXML file as well, so MuseScore shows them too; and a score's pedal marks come into Groove as the sustain pedal.</p>
+<p><b>The full score.</b> Press <kbd>Menu</kbd> over the Score window for its own menu. <b>Full score</b> shows every track at once, the way a conductor reads it: a staff per part (two, joined by a brace, for a piano), each named on the left, with the bars lined up down the page. Choose it again to go back to just the selected track; the window's title says which you're looking at.</p>
+<figure><img src="images/score-full.png" alt="A full score"><figcaption>A clarinet, guitar and viola as a full score. The clarinet is written a tone up, in D, as a B flat clarinettist reads it; the guitar is on the treble clef with an 8 under it. The last two bars are empty, so each part has one bar of rest with a 2 over it.</figcaption></figure>
+<ul>
+<li><b>Transposing instruments</b> are written as their players read them, worked out from the track's sound (<a href="#ch12">Chapter 12</a>): a B flat clarinet, trumpet or soprano sax a tone higher, a tenor sax an octave and a tone higher, alto and baritone sax, French horn and cor anglais in their own keys, a guitar or bass guitar an octave higher, piccolo, glockenspiel and xylophone an octave or two lower. Each part gets its own key signature.</li>
+<li><b>Concert pitch</b> (in the Score menu) writes every part as it sounds, which is handy for checking the harmony. Instruments that only sound an octave away (guitar, bass, piccolo) stay as they are, as they would in a printed score.</li>
+<li><b>Clefs:</b> treble or bass from where the notes lie, treble with an 8 for guitar, the alto (C) clef for viola, and the tenor clef for a cello, bassoon or trombone part that stays high.</li>
+<li><b>Sharps or flats.</b> A note outside the key is spelt to lead where it goes: G sharp when it rises to A, A flat when it falls to G. Otherwise it's spelt as is usual in the key.</li>
+<li><b>Bars of rest</b> in a row are written as one bar with the number of bars over it, which is what a player needs to count.</li>
+<li><b>Tuplets</b>: triplet quavers and crotchets (three in the time of two beats), quintuplets, sextuplets, and duplets in 6/8.</li>
+</ul>
+<figure><img src="images/score-concert.png" alt="Concert pitch and the alto clef"><figcaption>The same score at concert pitch, scrolled down: the viola is on the alto clef.</figcaption></figure>
+<figure><img src="images/score-menu.png" alt="The Score window's menu"><figcaption>The Score window's menu. <b>Main menu</b> leads to Groove's usual menu.</figcaption></figure>
+<p><b>Repeats.</b> Music that's played again straight after, the same in every part, is written once between repeat signs, as a musician would write it: two bars played twice, a one-bar drum beat played eight times ("Play 8 times" over its end), or a passage played twice with a different last bar (first and second endings). A song made from loops gets much shorter to read. When the song plays, the bar lit is the one being played, the second time round too. To see the music written out in full, choose <b>Repeats</b> from the Score window's menu to turn them off.</p>
+<figure><img src="images/score-repeats.png" alt="Repeats"><figcaption>A tune of 20 bars as four: two bars played four times, then (in a new key) two bars played six times.</figcaption></figure>
+<p><b>Changes of key.</b> When a long passage moves to a new key (the last verse a tone higher, say) and writing it in that key would save a good many sharps, flats and naturals, the key signature changes where it starts, after a double bar line, with naturals to cancel the old one if needed. A few notes from outside the key don't change it: they get accidentals.</p>
+<figure><img src="images/score-keychange.png" alt="A change of key"><figcaption>The same tune written out in full (Repeats off): C major, then D major from bar 9.</figcaption></figure>
+<p><b>Changes of clef, and 8va.</b> A part that goes high or low for a while changes clef for it, with a small clef where it changes: a cello or bassoon to the tenor clef, a viola to the treble, a tune that goes down low to the bass. A passage far above the staff (high on a piano, say) is written an octave lower under an <i>8va</i> line, and one far below an octave higher under <i>8vb</i>, so it isn't lost in ledger lines; two octaves out, it's <i>15ma</i> (or <i>15mb</i>). A line starts at the first note that needs it and ends after the last, in the middle of a bar if that's where they are.</p>
+<p>When a new key or clef starts at the beginning of a line of music, it's shown at the end of the line before too (a courtesy key or clef), so the player isn't caught out turning to the next line.</p>
+<figure><img src="images/score-courtesy.png" alt="Courtesy key and clef"><figcaption>D major starting a line, shown at the end of the line before after a double bar line; and a cello's tenor clef, the same.</figcaption></figure>
+<figure><img src="images/score-clefs.png" alt="A change of clef"><figcaption>A cello part: four bars high up in the tenor clef, then back to the bass clef.</figcaption></figure>
+<figure><img src="images/score-8va.png" alt="An 8va line"><figcaption>A piano part going up: an 8va line from the third note of a bar to the second of a later one, and a 15ma line for two bars three octaves up.</figcaption></figure>
+<p>All of this goes into an exported MusicXML file too (the transposition, the clefs, the key changes, 8va lines, repeats and tuplets), so MuseScore shows each part the same way, and plays the repeats as Groove does.</p>
+
+<p>The score is for reading: to change the music, change its notes in the Editor (<kbd>F8</kbd>). It's worked out from the piano roll, so music drawn on the grid reads best.</p>
+
+<p><b>Printing the score.</b> Select the track and choose <b>Song &rarr; Print score</b>, or press <kbd>Ctrl</kbd>+<kbd>P</kbd>. Groove prints on the printer you've set up in !Printers (in the <code>Printing</code> directory on your hard disc), as any RISC OS program does: the music is laid out again to fit the printer's paper, with the song's name and the track's at the top, and as many pages as it needs, each ending at the end of a line of music. If no printer is set up yet, Groove says so; open !Printers, choose your printer and try again.</p>
+<p>From the Score window's menu, <b>Print score</b> prints what the window shows: the selected track, or the full score if that's on. <b>Print parts</b> prints a part for each player, every track on its own pages with its name at the top, transposed for its instrument, all in one go.</p>
+<figure><img src="images/score-parts.png" alt="Printed parts"><figcaption>The tops of the three parts printed from the score above: each starts on a new page.</figcaption></figure>
+<p>A score or part that takes more than one page has its name and the page number at the foot of each page, so the pages can be put back in order.</p>
+<figure><img src="images/score-pagefoot.png" alt="The foot of a printed page"><figcaption>The foot of page 2 of the Moonlight Sonata.</figcaption></figure>
+<figure><img src="images/song-menu.png" alt="Song, Print score"><figcaption>Song &rarr; Print score.</figcaption></figure>
+<figure><img src="images/score-printed.png" alt="A printed page"><figcaption>The first printed page of the Moonlight Sonata (printed to a PostScript file on A4).</figcaption></figure>
+
+<div class="box tech"><b class="label">TECHNICAL STUFF</b>A <code>.mscz</code> file is a zip file holding the score as XML (<code>.mscx</code>); Groove unpacks it itself, so nothing else is needed. Exported files are MusicXML 4.0, one part per track, at 480 divisions a beat (five times Groove's own timing, so quintuplets come out exact), with each note's velocity as its <code>dynamics</code>, and how much earlier (staccato) or later (legato) it's let go than written as its <code>release</code>, so the notes come back into Groove exactly as played. Coming in, a staccato note without a <code>release</code> sounds for half its value, as MuseScore plays it. Groove's import was checked against MuseScore's own test scores, and its export by opening the files in MuseScore and comparing what it plays with Groove's notes.</div>
 
 <h4>Maestro music</h4>
 <p>Maestro is the music-writing program that comes with RISC OS, and Groove plays its files (file type &amp;AF1, the ones with the music icon). RISC OS 5 has some in <code>Documents.Music.Maestro</code> to try. Drag one onto the song window, at the bar where you want it to start, or onto Groove's icon bar icon to start at bar 1.</p>
@@ -588,10 +680,10 @@ a { color:#1f5fa8; }
 <tr><td><kbd>A</kbd> to <kbd>;</kbd>, <kbd>W</kbd> to <kbd>P</kbd></td><td>Play notes</td></tr>
 <tr><td><kbd>Z</kbd> <kbd>X</kbd></td><td>Octave down / up</td></tr>
 <tr><td><kbd>Delete</kbd></td><td>Delete the selected region</td></tr>
-<tr><td><kbd>F7</kbd> <kbd>F8</kbd> <kbd>F9</kbd></td><td>Loops, Editor, Keyboard</td></tr>
+<tr><td><kbd>F6</kbd> <kbd>F7</kbd> <kbd>F8</kbd> <kbd>F9</kbd></td><td>Score, Loops, Editor, Keyboard</td></tr>
 <tr><td><kbd>F10</kbd></td><td>MIDI out: Off, MIDI Support, Port 1 to 4, in turn</td></tr>
 <tr><td><kbd>F11</kbd> / <kbd>Shift</kbd>+<kbd>F11</kbd></td><td>Play on MIDI out: the selected track / the whole song</td></tr>
-<tr><td><kbd>Ctrl</kbd>+<kbd>S</kbd></td><td>Save</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>S</kbd> / <kbd>Ctrl</kbd>+<kbd>P</kbd></td><td>Save / print the selected track's score</td></tr>
 <tr><td><kbd>Ctrl</kbd>+<kbd>Z</kbd></td><td>Undo (<kbd>Ctrl</kbd>+<kbd>Y</kbd> redoes)</td></tr>
 </table>
 
@@ -620,6 +712,7 @@ a { color:#1f5fa8; }
 <li><b>No CPU when idle:</b> null events are switched off whenever nothing is playing or held.</li>
 <li><b>Recording quantise</b> snaps note starts to the nearest sixteenth when you stop; merging then moves notes into any region they fall in (copying a shared pattern first).</li>
 <li><b>SoundFont mapping:</b> instrument tracks take MIDI channels in order, skipping 10, which all drum tracks share, unless a track has a channel set; instrument tracks after the 15th go to a second synth. Volume and pan are sent as controllers 7 and 10, and banks as 0 and 32.</li>
+<li><b>MuseScore and MusicXML:</b> scores are recognised by their contents (a zip holding an <code>.mscx</code> or MusicXML, or XML starting <code>&lt;museScore</code>, <code>&lt;score-partwise</code>), whatever the filetype; UTF-8 or UTF-16. Repeats and voltas are played out in MuseScore's order; D.C., D.S. and codas aren't followed. MuseScore's own sound banks aren't kept (they aren't General MIDI). Export is partwise MusicXML 4.0 at 480 divisions, with <code>transpose</code> for transposing instruments, saved with the filetype XML (&amp;F80).</li>
 <li><b>MIDI export</b> is type 1 at 96 PPQ, with a tempo track and one track per Groove track; Groove's own sounds map to programs 4, 38, 89, 80, 24, 16 and 14.</li>
 <li><b>Start-up log:</b> <code>&lt;Wimp$ScrapDir&gt;.GrooveLog</code> records each start-up step, the first events and whether the sound handler is being called; a crash is caught, logged and reported in an error box.</li>
 </ol>
@@ -639,11 +732,12 @@ a { color:#1f5fa8; }
 <tr><td><kbd>W</kbd> <kbd>E</kbd> <kbd>T</kbd> <kbd>Y</kbd> <kbd>U</kbd> <kbd>O</kbd> <kbd>P</kbd></td><td>Black notes</td></tr>
 <tr><td><kbd>Z</kbd> / <kbd>X</kbd></td><td>Octave down / up</td></tr>
 <tr><td><kbd>C</kbd> / <kbd>V</kbd></td><td>Velocity down / up</td></tr>
+<tr><td><kbd>F6</kbd></td><td>Score window, for the selected track</td></tr>
 <tr><td><kbd>F7</kbd> / <kbd>F8</kbd> / <kbd>F9</kbd></td><td>Loops / Editor / Keyboard window</td></tr>
 <tr><td><kbd>F10</kbd></td><td>The next MIDI out choice: Off, MIDI Support, Port 1 to Port 4, and round again (the song window's title shows it)</td></tr>
 <tr><td><kbd>F11</kbd></td><td>Play on MIDI out for the selected track, on or off</td></tr>
 <tr><td><kbd>Shift</kbd>+<kbd>F11</kbd></td><td>Play on MIDI out for every drum and instrument track, on or off</td></tr>
-<tr><td><kbd>Ctrl</kbd>+<kbd>S</kbd></td><td>Save</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>S</kbd> / <kbd>Ctrl</kbd>+<kbd>P</kbd></td><td>Save / print the selected track's score</td></tr>
 <tr><td><kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Ctrl</kbd>+<kbd>Y</kbd></td><td>Undo / Redo</td></tr>
 <tr><td><kbd>Ctrl</kbd>+<kbd>C</kbd> / <kbd>Ctrl</kbd>+<kbd>V</kbd></td><td>Copy the selected region / paste it at the playhead</td></tr>
 <tr><td><kbd>Ctrl</kbd>+<kbd>T</kbd></td><td>Split the selected region at the playhead</td></tr>
@@ -687,15 +781,16 @@ a { color:#1f5fa8; }
 <figure><img src="images/main-menu.png" alt="The main menu with the Track submenu"><figcaption>The main menu with its Track submenu.</figcaption></figure>
 <table>
 <tr><th>Menu</th><th>Items</th></tr>
-<tr><td>Song</td><td>New; Save...; Export as WAV...; Export as MIDI...; Key &rarr; (the 12 keys); Time signature &rarr; (2/4 to 12/8, from the playhead's bar); Play on MIDI out (every track; <kbd>Shift</kbd>+<kbd>F11</kbd>); Import WAV, MIDI, Maestro: drag in (a reminder)</td></tr>
+<tr><td>Song</td><td>New; Save...; Export as WAV...; Export as MIDI...; Export as MusicXML...; Key &rarr; (the 12 keys); Time signature &rarr; (2/4 to 12/8, from the playhead's bar); Play on MIDI out (every track; <kbd>Shift</kbd>+<kbd>F11</kbd>); Print score (the selected track; <kbd>Ctrl</kbd>+<kbd>P</kbd>); Import: drag in WAV, MIDI, MuseScore... (a reminder)</td></tr>
 <tr><td>Track</td><td>New drummer track; New instrument track; New audio track; Sound &rarr;; Rename &rarr;; Delete track; Play on MIDI out (<kbd>F11</kbd>); MIDI channel &rarr; (Auto, 1 to 16); Bank &amp; program &rarr; (Bank MSB, Bank LSB, Program)</td></tr>
 <tr><td>Region</td><td>Edit; Duplicate; Delete; Split at playhead (<kbd>Ctrl</kbd>+<kbd>T</kbd>); Copy (<kbd>Ctrl</kbd>+<kbd>C</kbd>); Paste (<kbd>Ctrl</kbd>+<kbd>V</kbd>)</td></tr>
-<tr><td>Loop browser, Editor, Musical typing</td><td>Open those windows (<kbd>F7</kbd>, <kbd>F8</kbd>, <kbd>F9</kbd>)</td></tr>
+<tr><td>Loop browser, Editor, Score, Musical typing</td><td>Open those windows (<kbd>F7</kbd>, <kbd>F8</kbd>, <kbd>F6</kbd>, <kbd>F9</kbd>)</td></tr>
 <tr><td>MIDI keyboard</td><td>Off; MIDI Support; Any port; Port 1 to Port 4: where Groove listens for a MIDI keyboard</td></tr>
 <tr><td>MIDI out (<kbd>F10</kbd>)</td><td>Off; MIDI Support; Port 1 to Port 4: where tracks on MIDI out are sent</td></tr>
 <tr><td>Cycle, Metronome, Count-in, Merge recordings, Follow playhead</td><td>Turn each on or off (ticked when on). Count-in and Follow playhead start on.</td></tr>
 <tr><td>Undo, Redo</td><td>Take back the last change, or put it back (<kbd>Ctrl</kbd>+<kbd>Z</kbd>, <kbd>Ctrl</kbd>+<kbd>Y</kbd>)</td></tr>
 </table>
+<p>The Score window has its own menu: Full score; Concert pitch; Repeats (each ticked when on; Repeats starts on); Print score (<kbd>Ctrl</kbd>+<kbd>P</kbd>); Print parts; Main menu &rarr; (the menu above).</p>
 <p>The icon bar menu: Info &rarr; (the Info box); Help...; User guide; Song window; Loop browser; New song; Quit.</p>
 
 <p class="small">Groove is free software under the MIT licence; the licences of the code it includes are in <code>!Groove.Licences</code>. Groove's SoundFont sounds use SoftMIDI's library and TinySoundFont (MIT licence). The SoundFont itself comes with !SoftMIDI.</p>

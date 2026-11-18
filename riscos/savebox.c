@@ -1,6 +1,7 @@
 /* Groove - the save box, the RISC OS way: drag the file icon to a Filer
    window (or any program that takes the file), or type a full pathname
-   and press Return. Used for songs, "Export as WAV" and "Export as MIDI".
+   and press Return. Used for songs, "Export as WAV", "Export as MIDI" and
+   "Export as MusicXML".
 
    The drag uses the data transfer protocol (PRM 3-252):
      we -> DataSave (leaf name, type) -> them
@@ -62,6 +63,9 @@ void savebox_open (int type)
   snprintf (sprite, sizeof sprite, "file_%03x", type);
   if (type == FILETYPE_SONG)
     snprintf (path, sizeof path, "%s", app.path[0] ? app.path : "Song");
+  else if (type == FILETYPE_XML)
+    /* (/musicxml: the name it has on a PC, for MuseScore) */
+    snprintf (path, sizeof path, "%.240s/musicxml", app.path[0] ? app.path : "Score");
   else if (app.path[0])
     snprintf (path, sizeof path, "%.250s_%s", app.path, type == FILETYPE_MIDI ? "midi" : "mix");
   else
@@ -77,12 +81,14 @@ int save_to (const char *p, int type)
   int rc;
   _swix (Hourglass_On, 0);
   rc = type == FILETYPE_SONG ? gr_song_save (&app.song, p)
-       : type == FILETYPE_MIDI ? gr_midi_export (&app.song, p) : gr_bounce (&app.song, p);
+       : type == FILETYPE_MIDI ? gr_midi_export (&app.song, p)
+       : type == FILETYPE_XML ? gr_musicxml_export (&app.song, p) : gr_bounce (&app.song, p);
   _swix (Hourglass_Off, 0);
   if (rc)
     {
       app_error (type == FILETYPE_SONG ? "Groove couldn't save the song there."
                  : type == FILETYPE_MIDI ? "Groove couldn't write the MIDI file there."
+                 : type == FILETYPE_XML ? "Groove couldn't write the MusicXML file there (it needs a drum or instrument track with notes)."
                  : "Groove couldn't write the WAV file there.");
       return -1;
     }

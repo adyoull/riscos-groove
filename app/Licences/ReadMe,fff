@@ -2,7 +2,7 @@ Licences for !Groove
 ====================
 
 Groove is by Andrew Youll, under the MIT licence: see Groove.
-Its source is published with it (groove-0.2-source.zip).
+Its source is at https://github.com/adyoull/riscos-groove.
 
 Groove's !RunImage includes these other people's work, linked into it:
 
@@ -17,12 +17,21 @@ Groove's !RunImage includes these other people's work, linked into it:
                  licence, with some parts under the LGPL: UnixLib. Because
                  UnixLib is linked into Groove, Groove's source is
                  available, so it can be rebuilt with another UnixLib.
+  Bravura        Steinberg's music font: the Score window draws its
+                 notes, clefs and other symbols from outlines taken from
+                 Bravura. SIL Open Font Licence 1.1, with Reserved Font
+                 Name "Bravura": Bravura.
   libgcc         GCC's runtime library: GPL with the GCC Runtime Library
                  Exception, which places no conditions on Groove.
 
 Credit
   Groove's reverb is a Freeverb-style design, using Freeverb's delay
   lengths. Freeverb is by Jezar at Dreampoint and is public domain.
+  Groove's own unzip code (for MuseScore and MusicXML files) decodes
+  deflate data the way Mark Adler's puff.c does (zlib licence); it's
+  written for Groove and contains no zlib code. Drum parts are written
+  where MuseScore's standard drum set puts each drum, so they read the
+  same in MuseScore.
 
 Not included
   SoundFont sounds use the SoundFont that !SoftMIDI installs (its own

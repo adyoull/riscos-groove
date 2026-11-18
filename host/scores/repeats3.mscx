@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<museScore version="3.02">
+  <programVersion>3.6.2</programVersion>
+  <Score>
+    <Division>480</Division>
+    <Part>
+      <Staff id="1">
+        <StaffType group="pitched">
+          <name>stdNormal</name>
+          </StaffType>
+        </Staff>
+      <trackName>Piano</trackName>
+      <Instrument>
+        <longName>Piano</longName>
+        <trackName>Piano</trackName>
+        <Channel>
+          <program value="0"/>
+          <controller ctrl="0" value="17"/>
+          </Channel>
+        </Instrument>
+      </Part>
+    <Staff id="1">
+      <VBox>
+        <height>10</height>
+        <Text><style>Title</style><text>Repeats</text></Text>
+        </VBox>
+      <Measure len="1/4">
+        <voice>
+          <TimeSig><sigN>3</sigN><sigD>4</sigD></TimeSig>
+          <Tempo><tempo>2</tempo><text>&#x2669; = 120</text></Tempo>
+          <Chord><durationType>quarter</durationType><Note><pitch>72</pitch><tpc>14</tpc></Note></Chord>
+          </voice>
+        </Measure>
+      <Measure>
+        <startRepeat/>
+        <voice>
+          <Chord><durationType>quarter</durationType><Note><pitch>74</pitch><tpc>16</tpc></Note></Chord>
+          <Chord><durationType>half</durationType>
+            <Note>
+              <Spanner type="Tie"><Tie></Tie><next><location><fractions>1/2</fractions></location></next></Spanner>
+              <pitch>76</pitch><tpc>18</tpc>
+              </Note>
+            </Chord>
+          </voice>
+        </Measure>
+      <Measure>
+        <voice>
+          <Chord><durationType>quarter</durationType>
+            <Note>
+              <Spanner type="Tie"><prev><location><fractions>-1/2</fractions></location></prev></Spanner>
+              <pitch>76</pitch><tpc>18</tpc>
+              </Note>
+            </Chord>
+          <Chord><durationType>quarter</durationType>
+            <Note><pitch>77</pitch><tpc>13</tpc></Note>
+            <Note><pitch>81</pitch><tpc>17</tpc></Note>
+            </Chord>
+          <Tuplet><normalNotes>2</normalNotes><actualNotes>3</actualNotes><baseNote>eighth</baseNote><Number><text>3</text></Number></Tuplet>
+          <Chord><durationType>eighth</durationType><Note><pitch>79</pitch><tpc>15</tpc></Note></Chord>
+          <Chord><durationType>eighth</durationType><Note><pitch>81</pitch><tpc>17</tpc></Note></Chord>
+          <Chord><durationType>eighth</durationType><Note><pitch>83</pitch><tpc>19</tpc></Note></Chord>
+          <endTuplet/>
+          </voice>
+        </Measure>
+      <Measure>
+        <endRepeat>2</endRepeat>
+        <voice>
+          <Spanner type="Volta">
+            <Volta><endHookType>1</endHookType><beginText>1.</beginText><endings>1</endings></Volta>
+            <next><location><measures>1</measures></location></next>
+            </Spanner>
+          <Chord><dots>1</dots><durationType>half</durationType><Note><pitch>84</pitch><tpc>14</tpc></Note></Chord>
+          <Spanner type="Volta"><prev><location><measures>-1</measures></location></prev></Spanner>
+          </voice>
+        </Measure>
+      <Measure>
+        <voice>
+          <Spanner type="Volta">
+            <Volta><beginText>2.</beginText><endings>2</endings></Volta>
+            <next><location><measures>1</measures></location></next>
+            </Spanner>
+          <Chord><dots>1</dots><durationType>half</durationType><Note><pitch>86</pitch><tpc>16</tpc></Note></Chord>
+          </voice>
+        </Measure>
+      <Measure>
+        <voice>
+          <Chord><durationType>eighth</durationType><acciaccatura/><Note><pitch>90</pitch><tpc>20</tpc></Note></Chord>
+          <Dynamic><subtype>p</subtype><velocity>49</velocity></Dynamic>
+          <Chord><durationType>half</durationType><Note><pitch>76</pitch><tpc>18</tpc></Note></Chord>
+          <Rest><durationType>quarter</durationType></Rest>
+          </voice>
+        <voice>
+          <Chord><dots>1</dots><durationType>half</durationType><Note><pitch>60</pitch><tpc>14</tpc></Note></Chord>
+          </voice>
+        </Measure>
+      </Staff>
+    </Score>
+  </museScore>

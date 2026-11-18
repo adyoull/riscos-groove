@@ -97,7 +97,7 @@ int lay_browser_height (void);
    browser as a column on the right, the keyboard over the editor's left
    end; clear of the icon bar, with room for each window's title bar and
    scroll bar. */
-enum { WS_SONG, WS_EDITOR, WS_LOOPS, WS_KEYS };
+enum { WS_SONG, WS_EDITOR, WS_LOOPS, WS_KEYS, WS_SCORE };
 #define WS_MARGIN   16
 #define WS_ICONBAR  136         /* the icon bar's height, and a little */
 #define WS_TITLE    44          /* a title bar */

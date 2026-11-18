@@ -291,6 +291,9 @@ lay_box lay_workspace (int sw, int sh, int which)
       if (b.y1 - b.y0 > lay_browser_height ())       /* no taller than the list */
         b.y0 = b.y1 - lay_browser_height ();
       break;
+    case WS_SCORE:              /* where the editor goes, a little further right */
+      b.x0 = x0 + 120; b.x1 = left_x1 + 120 < x1 ? left_x1 + 120 : x1; b.y0 = y0; b.y1 = song_y0 - WS_MARGIN - WS_TITLE;
+      break;
     case WS_KEYS:
       b.x0 = x0 + WS_MARGIN; b.x1 = b.x0 + WS_KEYS_W; b.y0 = y0 + WS_MARGIN; b.y1 = b.y0 + WS_KEYS_H;
       break;

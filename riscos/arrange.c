@@ -1328,7 +1328,7 @@ void arrange_drop_file (const char *path, int type, int x, int y)
   lay_hit h;
   to_work (x, y, &wx, &wy);
   h = lay_arranger_hit (&app.view, &app.song, wx > HDR_W ? wx : HDR_W, wy);
-  if (type == FILETYPE_MIDI || type == FILETYPE_MAESTRO)
+  if (type == FILETYPE_MIDI || type == FILETYPE_MAESTRO || type == FILETYPE_SCORE)
     {
       arrange_import (path, type, gr_bar_snap (&app.song, h.tick < 0 ? 0 : h.tick));
       return;
@@ -1365,7 +1365,7 @@ static int read_voices (const char *names[], int max)
   return n;
 }
 
-/* A MIDI or Maestro file: new tracks from `tick` (a bar). */
+/* A MIDI, Maestro, MuseScore or MusicXML file: new tracks from `tick` (a bar). */
 void arrange_import (const char *path, int type, int tick)
 {
   const char *why, *voices[32];
@@ -1376,12 +1376,15 @@ void arrange_import (const char *path, int type, int tick)
       int nv = read_voices (voices, 32);
       n = gr_maestro_import (&app.song, path, tick, nv ? voices : NULL, nv, &why);
     }
+  else if (type == FILETYPE_SCORE)
+    n = gr_score_import (&app.song, path, tick, &why);
   else
     n = gr_midi_import (&app.song, path, tick, &why);
   _swix (Hourglass_Off, 0);
   if (n < 0)
     {
       app_error (why ? why : type == FILETYPE_MAESTRO ? "Groove couldn't import that Maestro file."
+                 : type == FILETYPE_SCORE ? "Groove couldn't import that score."
                  : "Groove couldn't import that MIDI file.");
       return;
     }

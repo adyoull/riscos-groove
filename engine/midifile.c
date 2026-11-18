@@ -10,6 +10,7 @@
 #include <string.h>
 #include "groove.h"
 #include "place.h"
+#include "score.h"
 
 
 /* ---- reading ------------------------------------------------------------------ */
@@ -209,7 +210,7 @@ static int read_track (rd *r, mchan *ch, long *tempo, long *last)
 }
 
 /* Groove's own sound nearest a GM program, for when there's no SoundFont. */
-static int nearest_patch (int program)
+int gs_nearest_patch (int program)
 {
   static const int by_family[16] = {
     PATCH_EPIANO, PATCH_BELL, PATCH_ORGAN, PATCH_PLUCK, PATCH_BASS, PATCH_PAD,
@@ -356,7 +357,7 @@ int gr_midi_import (gr_song *s, const char *path, int from, const char **why)
       if (!m->n)
         continue;
       snprintf (name, sizeof name, "%s", drums ? "Drums" : gr_gm_program_name (prog));
-      t = gr_track_add (s, drums ? TRK_DRUMS : TRK_INST, name, drums ? KIT_STUDIO : nearest_patch (prog));
+      t = gr_track_add (s, drums ? TRK_DRUMS : TRK_INST, name, drums ? KIT_STUDIO : gs_nearest_patch (prog));
       if (t < 0)
         {
           snprintf (msg, sizeof msg, "Groove has room for %d tracks, so some parts weren't imported",

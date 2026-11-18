@@ -1,5 +1,106 @@
 # Changelog
 
+## 0.4 (18 Nov 2026)
+
+MuseScore and MusicXML, for school (asked for by Raik on the ROOL forum):
+
+- Import MuseScore scores (.mscz and .mscx, from MuseScore 2, 3 and 4)
+  and MusicXML (.musicxml, .xml, and compressed .mxl): drop one on the
+  song window or Groove's icon. Each part becomes a track with its
+  instrument as a SoundFont sound; repeats and first/second endings are
+  played out, tied notes joined, and tuplets, pickup bars, dynamics,
+  transposing instruments and 8va lines kept. Into an empty song, the
+  score's tempo and time signatures come too. Files are recognised by
+  what's in them, so ones from a PC or a USB stick (Data, XML or an
+  archive) work. Grace notes, ornaments, D.C./D.S. jumps and lyrics
+  aren't read.
+- Song > Export as MusicXML: the song as a score MuseScore (and Sibelius,
+  Dorico and Finale) open, each drum and instrument track a part. Groove
+  writes the notation: note values that respect the beat, ties, triplets
+  where they fit, two staves for a piano-range part, a second voice for
+  held notes, a key signature worked out from the notes (major or
+  minor), drums on a percussion staff, and each note's velocity.
+- Saved as XML (&F80), named Name/musicxml so it's a .musicxml file on a
+  PC.
+- The Score window (F6, or Menu > Score): the selected track written out
+  as music, the same way as the MusicXML export, laid out to the
+  window's width. The bar playing is lit and followed; click a bar to
+  move the playhead there; + and - change the size. Its symbols come
+  from the Bravura music font (SIL Open Font Licence; see
+  !Groove.Licences).
+- How it's played, in the Score window and in MusicXML: dynamics (ppp
+  to fff) from the notes' velocities, a bar at a time; accents on notes
+  played much harder than those round them; staccato for notes let go
+  well before the next (written to the next note, with a dot, rather
+  than a short note and a rest); slurs over notes played legato. Drums
+  are written in two voices: hands stems up, feet (bass drum, pedal
+  hi-hat) stems down. MusicXML's release attribute keeps how early or
+  late each note is really let go, so a round trip through MusicXML
+  gives back the notes as played; a staccato note from elsewhere plays
+  for half its value, as in MuseScore (MuseScore files too).
+- Hairpins: crescendo and diminuendo where the notes get steadily
+  louder or softer (over a beat or more), ending at the dynamic they
+  reach; loud notes inside one aren't marked as accents.
+- Pedal marks: Ped. and * from the sustain pedal (controller 64). In
+  MusicXML they're written as pedal marks, and a score's pedal marks
+  (MusicXML, and MuseScore 2 to 4 files) come into Groove as the
+  sustain pedal.
+- Song > Print score (Ctrl-P): the selected track's score printed on the
+  printer set up in !Printers, laid out to its paper, as many pages as
+  it takes, breaking between lines of music.
+- Score window: the music is drawn anti-aliased (smooth edges, like the
+  desktop's text) on 16 and 32-bit screens, and in 256 colours through
+  ColourTrans; ties, slurs and hairpins take Bravura's own thicknesses.
+- Full score: Menu > Full score in the Score window shows every track
+  together, one staff (or two for a keyboard) per part, named on the
+  left, with a brace for each piano and the bars lined up down the page.
+  Menu > Print parts prints a separate part for each player, each
+  starting on a new page; Print score prints the full score.
+- Transposing instruments are written as their players read them: a
+  B flat clarinet, trumpet, soprano or tenor sax a tone up (the tenor
+  an octave higher too), alto and baritone sax, horn and cor anglais in
+  their keys, guitar and bass an octave up, piccolo, glockenspiel and
+  xylophone lower. Each part gets its own key signature. Menu > Concert
+  pitch shows the score as it sounds. MusicXML carries the
+  transposition, so MuseScore shows the same.
+- Clefs: treble-8 for guitar, alto for viola, and tenor for a cello,
+  bassoon or trombone part that sits high.
+- Better spelling: notes outside the key are written sharp or flat to
+  suit the next note (a G sharp rising to A, an A flat falling to G),
+  and otherwise as is usual in the key (a sharpened fourth in major, a
+  sharpened sixth and seventh in minor).
+- Multi-bar rests: bars of rest in a row are written as one bar with
+  the count above, in a single part and in printed parts.
+- Tuplets: crotchet triplets (three over two beats), quintuplets,
+  sextuplets and, in 6/8 and other compound times, duplets, as well as
+  quaver triplets. They're written to MusicXML too.
+- Key changes: where a long passage moves to a new key (the last verse
+  a tone up, say) and its key signature would save a good many
+  accidentals, the key signature changes there, after a double bar
+  line, with naturals cancelling the old sharps or flats. A few chromatic
+  notes don't change it.
+- Clef changes: a part that goes high or low for a passage changes clef
+  for it, with a small clef at the bar where it changes: a cello or
+  bassoon to the tenor clef, a viola to treble, a melody to bass.
+- 8va and 8vb lines: a passage far above (or below) the staff is
+  written an octave nearer under an 8va (or 8vb) line, for piano and
+  other instruments, instead of with a ladder of ledger lines; two
+  octaves out, 15ma (15mb). A line starts at the first note that needs
+  it and ends after the last, part way through a bar if need be.
+- A key or clef changing at the start of a line of music is shown at
+  the end of the line before too (a courtesy key or clef).
+- Repeats: music played again straight after is written once between
+  repeat signs ("Play 4 times" over the end if more than twice), with
+  first and second endings where only the end differs. The bar playing
+  is still lit, the second time round too. Menu > Repeats in the Score
+  window turns them off, to see it written out in full. MusicXML has
+  them too, and MuseScore plays them out.
+- Printing: a score or part of more than one page has its name and the
+  page number ("page 2 of 6") at the foot of each page.
+- In a bar of four beats, notes and rests that start after the downbeat
+  don't run over the middle of the bar (a crotchet rest then a minim
+  rest, not a dotted crotchet rest, a quaver rest and a crotchet rest).
+
 ## 0.3 (9 Nov 2026)
 
 Pete Everett's suggestions, and the rest of his report:

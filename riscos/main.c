@@ -92,7 +92,7 @@ void app_set_extent (int window, int w, int h)
    Wimp keeps a closed window's state). */
 void app_open_window (int window, int which)
 {
-  static int placed[4];
+  static int placed[WS_SCORE + 1];
   int b[10];
   b[0] = window;
   _swix (Wimp_GetWindowState, _IN (1), b);
@@ -142,6 +142,7 @@ void app_changed (void)
       app_redraw_all (app.w_tool);   /* the tempo and key (a song loaded, a MIDI file's tempo) */
     }
   editor_changed ();
+  score_changed ();
   if (app.edit_open)
     app_redraw_all (app.w_edit);
   arrange_title ();
@@ -217,16 +218,17 @@ static void menu_end (menu_builder *b)
   b->m[4] = (b->maxlen + 2) * 16;   /* item width: system font is 16 units */
 }
 
-enum { MENU_NONE, MENU_ICONBAR, MENU_MAIN, MENU_SOUND, MENU_LANE };
+enum { MENU_NONE, MENU_ICONBAR, MENU_MAIN, MENU_SOUND, MENU_LANE, MENU_SCORE };
 /* The controller lane's menu: the common controllers, and any CC by number. */
 static const int lane_types[] = { 1, 2, 7, 10, 11, 64, 71, 74, 91, 93, GR_CTL_BEND, GR_CTL_PRESSURE, GR_CTL_PROGRAM };
 #define NLANE ((int) (sizeof lane_types / sizeof lane_types[0]))
 static int m_lane[7 + 6 * (NLANE + 1)], m_lane_cc[7 + 6];
+static int m_score[7 + 6 * 6];
 static char lane_text[NLANE][40], lane_cc_buf[4];
 static int open_menu = MENU_NONE, menu_x, menu_y;
 static int m_iconbar[MENU_WORDS (7)];
 static int m_midi[MENU_WORDS (7)], m_midiout[MENU_WORDS (6)];
-static int m_main[MENU_WORDS (15)], m_song[MENU_WORDS (8)], m_key[MENU_WORDS (12)];
+static int m_main[MENU_WORDS (16)], m_song[MENU_WORDS (10)], m_key[MENU_WORDS (12)];
 /* Song > Time signature: from the bar the playhead is in. */
 static const int meters[][2] = { { 2, 4 }, { 3, 4 }, { 4, 4 }, { 5, 4 }, { 6, 8 }, { 7, 8 }, { 9, 8 }, { 12, 8 } };
 #define NMETERS ((int) (sizeof meters / sizeof meters[0]))
@@ -398,6 +400,32 @@ static void build_lane_menu (void)
   menu_end (&b);
 }
 
+static void build_main_menu (void);
+
+/* The Score window's menu. */
+static void build_score_menu (void)
+{
+  menu_builder b;
+  menu_begin (&b, m_score, "Score");
+  menu_add (&b, "Full score", score_full () ? MI_TICK : 0, NULL, 0);
+  menu_add (&b, "Concert pitch", score_concert () ? MI_TICK : 0, NULL, 0);
+  menu_add (&b, "Repeats", (score_repeats () ? MI_TICK : 0) | MI_DOTTED, NULL, 0);
+  menu_add (&b, "Print score       ^P", 0, NULL, 0);
+  menu_add (&b, "Print parts", MI_DOTTED, NULL, 0);
+  menu_add (&b, "Main menu", 0, m_main, 0);
+  menu_end (&b);
+}
+
+void app_score_menu (int x, int y)
+{
+  build_main_menu ();
+  build_score_menu ();
+  open_menu = MENU_SCORE;
+  menu_x = x;
+  menu_y = y;
+  app_check (_swix (Wimp_CreateMenu, _INR (1, 3), m_score, menu_x, menu_y));
+}
+
 void app_lane_menu (int x, int y)
 {
   build_lane_menu ();
@@ -490,11 +518,14 @@ static void build_main_menu (void)
   menu_add (&b, "New", MI_DOTTED, NULL, 0);
   menu_add (&b, "Save...", 0, NULL, 0);
   menu_add (&b, "Export as WAV...", 0, NULL, 0);
-  menu_add (&b, "Export as MIDI...", MI_DOTTED, NULL, 0);
+  menu_add (&b, "Export as MIDI...", 0, NULL, 0);
+  menu_add (&b, "Export as MusicXML...", MI_DOTTED, NULL, !song_has_notes_tracks ());
   menu_add (&b, "Key", 0, m_key, 0);
   menu_add (&b, "Time signature", MI_DOTTED, m_meter, 0);
   menu_add (&b, "Play on MIDI out  \x8B" "F11", (song_midi_out () ? MI_TICK : 0) | MI_DOTTED, NULL, !song_has_notes_tracks ());
-  menu_add (&b, "Import WAV, MIDI, Maestro: drag in", 0, NULL, 1);
+  menu_add (&b, "Print score       ^P", MI_DOTTED, NULL,
+            !(has_t && app.song.tracks[t].type != TRK_AUDIO));
+  menu_add (&b, "Import: drag in WAV, MIDI, MuseScore...", 0, NULL, 1);
   menu_end (&b);
 
   build_sound_menu ();
@@ -595,6 +626,7 @@ static void build_main_menu (void)
   menu_add (&b, "Region", MI_DOTTED, m_region, 0);
   menu_add (&b, "Loop browser    F7", 0, NULL, 0);
   menu_add (&b, "Editor          F8", 0, NULL, 0);
+  menu_add (&b, "Score           F6", 0, NULL, 0);
   menu_add (&b, "Musical typing  F9", 0, NULL, 0);
   menu_add (&b, midiin_present () || midiin_support () ? "MIDI keyboard" : "MIDI keyboard (needs MIDI)",
             0, m_midi, 0);
@@ -724,8 +756,30 @@ static void new_track (gr_track_type t)
 
 static void menu_selection (int *sel)
 {
-  int t = app.sel_track, buttons;
-  if (open_menu == MENU_ICONBAR)
+  int t = app.sel_track, buttons, score_menu = open_menu == MENU_SCORE;
+  /* the Score menu: its own items, or the main menu through it */
+  if (score_menu)
+    {
+      switch (sel[0])
+        {
+        case 0: score_set_full (!score_full ()); break;
+        case 1: score_set_concert (!score_concert ()); break;
+        case 2: score_set_repeats (!score_repeats ()); break;
+        case 3: score_print (); break;
+        case 4: score_print_parts (); break;
+        case 5:
+          {
+            int k;
+            for (k = 0; k < 9 && sel[k] >= 0; k++)
+              sel[k] = sel[k + 1];
+            open_menu = MENU_MAIN;
+          }
+          break;
+        }
+    }
+  if (score_menu && open_menu == MENU_SCORE)
+    ;
+  else if (open_menu == MENU_ICONBAR)
     switch (sel[0])
       {
       case IB_HELP: filer_run ("!Help"); break;
@@ -770,14 +824,17 @@ static void menu_selection (int *sel)
         else if (sel[1] == 1) savebox_open (FILETYPE_SONG);
         else if (sel[1] == 2) savebox_open (FILETYPE_WAVE);
         else if (sel[1] == 3) savebox_open (FILETYPE_MIDI);
-        else if (sel[1] == 4 && sel[2] >= 0)
+        else if (sel[1] == 4) savebox_open (FILETYPE_XML);
+        else if (sel[1] == 5 && sel[2] >= 0)
           {
             app.song.key = sel[2];
             app_changed ();
           }
-        else if (sel[1] == 6)
+        else if (sel[1] == 7)
           app_song_midi_out ();
-        else if (sel[1] == 5 && sel[2] >= 0 && sel[2] < NMETERS)
+        else if (sel[1] == 8)
+          score_print ();
+        else if (sel[1] == 6 && sel[2] >= 0 && sel[2] < NMETERS)
           {
             /* From the bar the playhead is in (bar 1 at the start). */
             int bar = gr_tick_bar (&app.song, (int) gr_position (app.eng));
@@ -872,15 +929,16 @@ static void menu_selection (int *sel)
         break;
       case 3: browser_open (); break;
       case 4: editor_open (); break;
-      case 5: keys_open (); break;
-      case 6:
+      case 5: score_open (); break;
+      case 6: keys_open (); break;
+      case 7:
         {
           static const int ports[7] = { MIDI_OFF, MIDI_SUPPORT, MIDI_ANY, 0, 1, 2, 3 };
           if (sel[1] == 0 || (sel[1] == 1 && midiin_support ()) || (sel[1] > 1 && sel[1] < 7 && midiin_present ()))
             midiin_set_port (ports[sel[1]]);
         }
         break;
-      case 7:
+      case 8:
         {
           static const int ports[6] = { MIDI_OFF, MIDI_SUPPORT, 0, 1, 2, 3 };
           if (sel[1] == 0 || (sel[1] == 1 && midiin_support ()) || (sel[1] > 1 && sel[1] < 6 && midiin_present ()))
@@ -890,25 +948,32 @@ static void menu_selection (int *sel)
             }
         }
         break;
-      case 8: app.song.loop_on = !app.song.loop_on; app_changed (); break;
-      case 9: app.song.metronome = !app.song.metronome; app_redraw_all (app.w_tool); break;
-      case 10: app.count_in = !app.count_in; break;
-      case 11: app.merge = !app.merge; break;
-      case 12: app.follow = !app.follow; break;
-      case 13: app_undo (0); break;
-      case 14: app_undo (1); break;
+      case 9: app.song.loop_on = !app.song.loop_on; app_changed (); break;
+      case 10: app.song.metronome = !app.song.metronome; app_redraw_all (app.w_tool); break;
+      case 11: app.count_in = !app.count_in; break;
+      case 12: app.merge = !app.merge; break;
+      case 13: app.follow = !app.follow; break;
+      case 14: app_undo (0); break;
+      case 15: app_undo (1); break;
       }
   /* Adjust keeps the menu open, as everywhere on RISC OS. */
   app_pointer (NULL, NULL, &buttons, NULL, NULL);
+  if (score_menu)
+    open_menu = MENU_SCORE;
   if (buttons & BUT_ADJUST)
     {
-      if (open_menu == MENU_MAIN)
+      if (open_menu == MENU_SCORE)
+        {
+          build_main_menu ();
+          build_score_menu ();
+        }
+      else if (open_menu == MENU_MAIN)
         build_main_menu ();
       else if (open_menu == MENU_SOUND)
         build_sound_menu ();
       else if (open_menu == MENU_LANE)
         build_lane_menu ();
-      _swix (Wimp_CreateMenu, _INR (1, 3), open_menu == MENU_MAIN ? m_main
+      _swix (Wimp_CreateMenu, _INR (1, 3), open_menu == MENU_MAIN ? m_main : open_menu == MENU_SCORE ? m_score
              : open_menu == MENU_SOUND ? m_sound : open_menu == MENU_LANE ? m_lane : m_iconbar, menu_x, menu_y);
     }
 }
@@ -1002,6 +1067,17 @@ static void message (int *m, int reason)
           arrange_open ();
           arrange_import (path, m[10], 0);
         }
+      else if (!is_song_file (path) && gr_score_kind (path) != GR_SCORE_NONE)
+        {
+          /* MuseScore or MusicXML, whatever its filetype (from a PC or a
+             USB stick it's often Data, or XML, or an archive). */
+          reply (m, MSG_DATALOADACK);
+          arrange_open ();
+          if (m[5] == app.w_main)
+            arrange_drop_file (path, FILETYPE_SCORE, m[7], m[8]);
+          else
+            arrange_import (path, FILETYPE_SCORE, 0);
+        }
       else if (is_song_file (path))
         {
           reply (m, MSG_DATALOADACK);
@@ -1009,7 +1085,7 @@ static void message (int *m, int reason)
             load_song (path);
         }
       else if (reason != EV_MESSAGE_ACK)
-        app_error ("Groove loads its own songs, WAV files, MIDI files and Maestro music.");
+        app_error ("Groove loads its own songs, WAV files, MIDI files, MuseScore and MusicXML scores, and Maestro music.");
       break;
     case MSG_MODECHANGE:
       read_eigen ();
@@ -1026,6 +1102,8 @@ static void open_request (int *b)
     arrange_open_request (b);
   else if (b[0] == app.w_edit)
     editor_open_request (b);
+  else if (b[0] == app.w_score)
+    score_open_request (b);
   else
     app_check (_swix (Wimp_OpenWindow, _IN (1), b));
 }
@@ -1040,6 +1118,7 @@ static void close_request (int *b)
       if (b[0] == app.w_edit) app.edit_open = 0;
       if (b[0] == app.w_loops) { app.loops_open = 0; browser_stop_preview (); }
       if (b[0] == app.w_keys) { app.keys_open = 0; keys_release_all (); }
+      if (b[0] == app.w_score) score_close ();
     }
 }
 
@@ -1050,6 +1129,7 @@ static void redraw (int *b)
   else if (b[0] == app.w_edit) editor_redraw (b);
   else if (b[0] == app.w_loops) browser_redraw (b);
   else if (b[0] == app.w_keys) keys_redraw (b);
+  else if (b[0] == app.w_score) score_redraw (b);
 }
 
 static void give_caret (int window)
@@ -1082,6 +1162,7 @@ static void click (int *b)
   else if (b[3] == app.w_edit) editor_click (b);
   else if (b[3] == app.w_loops) browser_click (b);
   else if (b[3] == app.w_keys) keys_click (b);
+  else if (b[3] == app.w_score) score_click (b);
 }
 
 static void key (int *b)
@@ -1091,6 +1172,7 @@ static void key (int *b)
     return;
   switch (code)
     {
+    case 0x186: score_open (); return;            /* F6 */
     case 0x187: browser_open (); return;          /* F7 */
     case 0x188: editor_open (); return;           /* F8 */
     case 0x189: keys_open (); return;             /* F9 */
@@ -1098,10 +1180,13 @@ static void key (int *b)
     case 0x1CB: app_track_midi_out (); return;    /* F11: the selected track on MIDI out, or not */
     case 0x1DB: app_song_midi_out (); return;     /* Shift-F11: every track */
     case 0x13: savebox_open (FILETYPE_SONG); return;   /* Ctrl-S */
+    case 0x10: score_print (); return;                  /* Ctrl-P */
     case 0x1A: app_undo (0); return;                    /* Ctrl-Z */
     case 0x19: app_undo (1); return;                    /* Ctrl-Y */
     }
   if (b[0] == app.w_edit && editor_key (code))
+    return;
+  if (b[0] == app.w_score && score_key (code))
     return;
   if (keys_press (code))
     return;
@@ -1132,6 +1217,7 @@ static void null_event (void)
       last = now;
       arrange_tick ();
       editor_tick ();
+      score_tick ();
     }
 }
 
@@ -1225,7 +1311,7 @@ static int init (void)
   {
     static const struct { const char *what; int (*fn) (void); } steps[] = {
       { "the icon bar icon", create_iconbar_icon }, { "the song window", arrange_create },
-      { "the editor window", editor_create }, { "the loop browser", browser_create },
+      { "the editor window", editor_create }, { "the score window", score_create }, { "the loop browser", browser_create },
       { "the keyboard window", keys_create }, { "the save box", savebox_create },
       { "the Info box", info_create },
     };
