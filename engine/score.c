@@ -610,15 +610,20 @@ static int zip_score (const unsigned char *d, size_t n, gr_zip_entry *which)
         if (c)
           {
             c[len] = 0;
-            fp = strstr (c, "full-path=\"");
-            if (fp)
+            /* (MuseScore 4 lists its style, thumbnail and settings files
+               too, the style first: take the first that's a score) */
+            for (fp = strstr (c, "full-path=\""); fp && !found; fp = strstr (fp, "full-path=\""))
               {
-                char *q = strchr (fp + 11, '"');
+                char *name = fp + 11, *q = strchr (name, '"');
                 int j;
-                if (q)
-                  *q = 0;
+                if (!q)
+                  break;
+                *q = 0;
+                fp = q + 1;
+                if (!ends_with (name, ".mscx") && !ends_with (name, ".musicxml") && !ends_with (name, ".xml"))
+                  continue;
                 for (j = 0; j < k; j++)
-                  if (!strcmp (e[j].name, fp + 11))
+                  if (!strcmp (e[j].name, name))
                     {
                       *which = e[j];
                       found = ends_with (e[j].name, ".mscx") ? GR_SCORE_MSCZ : GR_SCORE_MXL;

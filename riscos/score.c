@@ -161,7 +161,7 @@ static gr_engraving *make (int track, int width, const char *title, int shown)
     }
   if (nt && track < 0)
     {
-      int parts[16], i, n = nt->nparts < 16 ? nt->nparts : 16;
+      int parts[GR_MAX_TRACKS], i, n = nt->nparts < GR_MAX_TRACKS ? nt->nparts : GR_MAX_TRACKS;
       for (i = 0; i < n; i++)
         parts[i] = i;
       g = gr_engrave_parts (nt, parts, n, width, title, app.song.tempo, EG_MULTIRESTS);

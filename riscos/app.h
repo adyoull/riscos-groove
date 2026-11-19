@@ -18,8 +18,8 @@
 #include "layout.h"
 
 #define APP_NAME     "Groove"
-#define APP_VERSION  "0.4"
-#define APP_DATE     "07-Nov-2026"
+#define APP_VERSION  "0.4.1"
+#define APP_DATE     "19-Nov-2026"
 #define TASK_WORD    0x4B534154
 
 #define FILETYPE_SONG  0xFFF       /* Text, until a type is allocated */

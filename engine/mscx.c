@@ -353,20 +353,27 @@ int gs_read_mscx (gs_score *sc, char *xml, size_t n, const char **why)
             staff_part[sid] = sc->nparts - 1;
           nstaff++;
         }
-      /* Its sound: the first channel ("normal"). */
-      for (ch = ins ? gx_child (ins, "Channel") : NULL; ch; ch = gx_next (ch, "Channel"))
-        {
-          const char *cn = gx_attr (ch, "name");
-          const gx_node *c;
-          if (cn && strcmp (cn, "normal"))
-            continue;
-          for (c = ch->child; c; c = c->next)
-            if (!strcmp (c->name, "program") && gx_attr (c, "value"))
-              p->program = atoi (gx_attr (c, "value")) & 127;
-            /* (Its bank isn't used: it picks among MuseScore's own sounds,
-               which a General MIDI SoundFont or instrument doesn't have.) */
-          break;
-        }
+      /* Its sound: its "normal" channel, or the first (brass have "open"
+         and "mute", strings "arco", "pizzicato" and "tremolo"). */
+      {
+        const gx_node *use = NULL, *c;
+        for (ch = ins ? gx_child (ins, "Channel") : NULL; ch; ch = gx_next (ch, "Channel"))
+          {
+            const char *cn = gx_attr (ch, "name");
+            if (!use)
+              use = ch;
+            if (!cn || !strcmp (cn, "normal"))
+              {
+                use = ch;
+                break;
+              }
+          }
+        for (c = use ? use->child : NULL; c; c = c->next)
+          if (!strcmp (c->name, "program") && gx_attr (c, "value"))
+            p->program = atoi (gx_attr (c, "value")) & 127;
+        /* (Its bank isn't used: it picks among MuseScore's own sounds,
+           which a General MIDI SoundFont or instrument doesn't have.) */
+      }
       if (p->drums && p->program < 0)
         p->program = 0;
     }

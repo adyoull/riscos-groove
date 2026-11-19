@@ -1917,6 +1917,16 @@ static void test_score_import (void)
   CHECK (n > 0 && got[0].tick == 4 * GR_BAR && got[0].pitch == 72, "it starts at the bar it was dropped on");
   gr_song_free (&s);
 
+  /* MuseScore 4.2 and later: container.xml lists the style file (and the
+     thumbnail and settings) before the score; a violin's sound is its
+     "arco" channel, with no "normal" one. */
+  gr_song_init (&s);
+  CHECK (gr_score_kind ("host/scores/ms4.mscz") == GR_SCORE_MSCZ, "MuseScore 4.2: a .mscz with its style file listed first");
+  n = gr_score_import (&s, "host/scores/ms4.mscz", 0, &why);
+  CHECK (n == 1 && s.ntracks == 1 && track_note_list (&s, 0, got, 64) > 0, "reads its score");
+  CHECK (n == 1 && s.tracks[0].gm == 40, "a violin plays the violin (its arco channel's program)");
+  gr_song_free (&s);
+
   /* Not scores. */
   CHECK (gr_score_kind ("host/test_engine.c") == GR_SCORE_NONE, "a C file isn't a score");
   gr_song_init (&s);

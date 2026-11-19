@@ -39,8 +39,8 @@
 #define STEM_LEN     (SP * 7 / 2)
 #define GRAND_GAP    (SP * 10)     /* top line to top line, two staves */
 #define MARGIN       (SP * 2)
-#define MAXROWS      32            /* staves in a system */
-#define MAXPARTS     16
+#define MAXROWS      64            /* staves in a system */
+#define MAXPARTS     GR_MAX_TRACKS
 
 /* ---- the list --------------------------------------------------------------- */
 

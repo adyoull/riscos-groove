@@ -68,8 +68,24 @@ int gr_engraving_svg (const gr_engraving *e, const char *path, double px_per_sp,
           }
           break;
         case EK_TEXT:
-          fprintf (f, "<text x=\"%.1f\" y=\"%.1f\" font-family=\"serif\" font-size=\"%.1f\">%s</text>\n",
-                   x0, y0, -y1 * -1 * k, e->text + it->w);
+          {
+            /* (the text's Latin-1, as on RISC OS: written as UTF-8, with
+               XML's own characters escaped) */
+            const unsigned char *t = (const unsigned char *) e->text + it->w;
+            fprintf (f, "<text x=\"%.1f\" y=\"%.1f\" font-family=\"serif\" font-size=\"%.1f\">", x0, y0, -y1 * -1 * k);
+            for (; *t; t++)
+              if (*t == '<')
+                fputs ("&lt;", f);
+              else if (*t == '>')
+                fputs ("&gt;", f);
+              else if (*t == '&')
+                fputs ("&amp;", f);
+              else if (*t >= 128)
+                fprintf (f, "%c%c", 0xC0 | (*t >> 6), 0x80 | (*t & 63));
+              else
+                fputc (*t, f);
+            fputs ("</text>\n", f);
+          }
           break;
         }
     }

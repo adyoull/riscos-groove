@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.4.1 (19 Nov 2026)
+
+- MuseScore 4 files from 4.2 on open: they list their style file before
+  the score, and Groove took the style file for the score ("That isn't
+  a MusicXML score"). Reported by Raik.
+- MuseScore files: brass and strings now get their own sounds (a horn
+  the horn, a violin the violin), not the piano. Their sound is in a
+  channel named "open" or "arco", which Groove didn't read.
+- A full score can show all 32 tracks (was 16), so a big orchestral
+  score shows every part.
+
 ## 0.4 (18 Nov 2026)
 
 MuseScore and MusicXML, for school (asked for by Raik on the ROOL forum):
