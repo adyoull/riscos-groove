@@ -46,6 +46,16 @@ void startlog (const char *fmt, ...)
   fflush (logf);
 }
 
+/* Centiseconds since the machine started (for timing steps in the log). */
+int log_time (void)
+{
+  int t = 0;
+#ifdef __riscos__
+  _swix (OS_ReadMonotonicTime, _OUT (0), &t);
+#endif
+  return t;
+}
+
 void startlog_stage (const char *what)
 {
   stage = what;

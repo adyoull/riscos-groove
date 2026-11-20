@@ -1,5 +1,73 @@
 # Changelog
 
+## 0.4.2 (20 November 2026)
+
+- The sustain pedal with SoundFont sounds: a key struck again while the
+  pedal holds it lets the old note go (as a piano's string is damped
+  and struck again), instead of the two sounding on together, so
+  pedalled music (a piano part with the pedal down through repeated
+  chords) uses far fewer voices. When every voice is busy, the oldest
+  note held only by the pedal makes way for a new one, rather than the
+  new note not sounding.
+- If making the sound can't keep up (too many SoundFont voices for the
+  machine), Groove lets go of the voices least missed (notes dying
+  away, then notes held only by the pedal) instead of the desktop
+  slowing to a crawl, and never spends long making sound in one go, so
+  the desktop stays usable. The log (<Wimp$ScrapDir>.GrooveLog) says
+  when it had to.
+- At most 64 SoundFont voices sound at once (was 96).
+- The log also records loading a score, building and drawing the Score
+  window, and Play, with timings.
+- Notes start exactly on time, to the sample: before, a note could be
+  up to 0.7 ms late (as could MIDI out), from the sound being made in
+  blocks; now a block ends where the next note starts. (Notes end at
+  the end of a block, within 1.5 ms.)
+- A big score (Money, Money, Money: 26 parts) played broken on a Pi in
+  0.4.2-test2 to test7. When playing fell behind, 40% of the sounding
+  notes were cut at once; now only a few are let go, and only when the
+  sound really is about to break up. The SoundFont players have 96 and
+  48 voices again, as in 0.4.1 (test2 to test8 had 64 and 32). The log
+  records, after each play, any notes cut short for want of a voice and
+  any underruns.
+- A spread chord spreads only the notes the score marks (a piano's
+  right-hand chord, say), not the other hand's notes at the same time.
+- Playback takes about half the processor time it did, so more
+  SoundFont voices play before anything has to give:
+  - the SoundFont player keeps its place in each sample in whole
+    numbers, not floating point, and its sound is mixed in directly
+    rather than going through 16 bits first;
+  - the reverb and mixing work on blocks of samples, not one at a time;
+  - the track settings are checked once per batch of sound, not 1,400
+    times a second, and songs without audio tracks skip that work.
+  The log says how hard playing worked, after each play.
+- A 26-part score uses half the memory: the second SoundFont player
+  (for parts after the 15th) shares the first's samples instead of
+  loading the SoundFont again.
+- A score keeps its own marks: dynamics, hairpins, slurs, staccato,
+  accents, 8va and 15ma lines, and spread chords (arpeggios, a new mark)
+  are read from MuseScore and MusicXML files and written where the
+  score has them, instead of being worked out from how the notes are
+  played (as they still are for a part played in, or from a MIDI
+  file). They're kept in the song file and exported in MusicXML.
+  A spread chord plays spread, as MuseScore plays it: its notes start
+  one after another, 35 ms apart, from the bottom (or from the top
+  for one marked downwards), and end together; an exported MIDI file
+  plays them the same way. One marked upwards or downwards has an
+  arrowhead at that end of its wavy line. Reported by Paul.
+- Tempo changes: a score's or MIDI file's changes of tempo come in with
+  it and play (they were left out: everything played at the first
+  tempo). The Score window shows each new tempo over its bar (a
+  multi-bar rest is broken where the tempo changes, so it's shown); they're
+  saved, undone and redone with the song, and exported in MusicXML and
+  MIDI files. Changing the tempo on the toolbar changes the later ones
+  in proportion. Reported by Paul.
+- Opening the Score window with no track selected (after deleting
+  one, say) froze the desktop. Reported by Paul.
+- The Score window has a close icon. Reported by Paul.
+- A score or MIDI file dropped into an empty song starts at bar 1,
+  wherever it's dropped (it used to start at the bar it landed on, so
+  could start after bars of silence).
+
 ## 0.4.1 (19 Nov 2026)
 
 - MuseScore 4 files from 4.2 on open: they list their style file before

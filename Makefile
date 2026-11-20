@@ -20,7 +20,7 @@ SOFTMIDI := $(SM)/src/midisynth.c $(SM)/src/output.c $(SM)/src/output_ssb.c $(SM
 SM_INC := -I$(SM)/include -I$(SM)/third_party/TinySoundFont
 RISCOS := riscos/main.c riscos/arrange.c riscos/editor.c riscos/browser.c riscos/keys.c \
           riscos/savebox.c riscos/gfx.c riscos/sound.c riscos/layout.c riscos/startlog.c riscos/midiin.c riscos/score.c
-HEADERS := engine/groove.h engine/place.h engine/score.h engine/xml.h engine/unzip.h engine/notation.h engine/engrave.h engine/glyphs.h engine/raster.h engine/audioin.h engine/gm_internal.h riscos/app.h riscos/gfx.h riscos/layout.h
+HEADERS := engine/groove.h engine/place.h engine/score.h engine/xml.h engine/unzip.h engine/notation.h engine/engrave.h engine/glyphs.h engine/raster.h engine/audioin.h engine/gm_internal.h riscos/app.h riscos/gfx.h riscos/layout.h $(SM)/include/midisynth.h $(SM)/src/midisynth_internal.h $(SM)/third_party/TinySoundFont/tsf.h
 OUT := out
 
 all: $(OUT)/Groove.zip

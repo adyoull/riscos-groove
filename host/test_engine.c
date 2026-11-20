@@ -484,6 +484,40 @@ static void test_gm_play (const char *sf)
   CHECK (s.tracks[0].meter > 0.0f, "its meter moves");
   gr_engine_free (e);
 
+  /* The sustain pedal: a chord struck again and again with the pedal down
+     doesn't pile up voices (each strike lets the last one go), and when
+     the sound can't be made fast enough the voices can be thinned. */
+  {
+    int p, t, k, before, n2;
+    gr_song_init (&s);
+    s.tempo = 120;
+    s.bars = 2;
+    t = gr_track_add (&s, TRK_INST, "Organ", PATCH_EPIANO);
+    s.tracks[t].gm = 16;          /* (an organ: it sounds for as long as it's held) */
+    p = gr_pattern_new (&s, "Pedalled", 2 * GR_BAR);
+    gr_pattern_set_ctl (&s.patterns[p], 0, 64, 127);
+    for (k = 0; k < 32; k++)
+      {
+        gr_pattern_add_note (&s.patterns[p], k * GR_PPQ / 2, GR_PPQ / 3, 60, 100);
+        gr_pattern_add_note (&s.patterns[p], k * GR_PPQ / 2, GR_PPQ / 3, 64, 100);
+        gr_pattern_add_note (&s.patterns[p], k * GR_PPQ / 2, GR_PPQ / 3, 67, 100);
+        gr_pattern_add_note (&s.patterns[p], k * GR_PPQ / 2, GR_PPQ / 3, 72, 100);
+      }
+    gr_region_add (&s, t, 0, 2 * GR_BAR, p);
+    e = gr_engine_new (&s);
+    gr_play (e);
+    render_peak (e, GR_RATE * 3 + GR_RATE / 20);   /* (just after a strike) */
+    before = gr_gm_voices ();
+    printf ("  a chord struck 24 times with the pedal down: %d voices sounding\n", before);
+    CHECK (before > 0 && before <= 24, "a chord struck again and again under the pedal doesn't pile up voices");
+    gr_gm_shed (50);
+    render_peak (e, GR_RATE / 100);                /* (before the next) */
+    n2 = gr_gm_voices ();
+    CHECK (n2 <= before / 2 + 1, "thinning the voices when it can't keep up");
+    gr_engine_free (e);
+    gr_song_free (&s);
+  }
+
   /* Mute and solo. */
   gm_song (&s, 0, 0);
   s.tracks[0].mute = 1;
@@ -2766,6 +2800,321 @@ static void test_signs (void)
   gr_song_free (&s);
 }
 
+
+/* ---- a score's own marks and tempo changes ---------------------------------- */
+
+static char *read_file (const char *path)
+{
+  FILE *f = fopen (path, "rb");
+  long n;
+  char *d;
+  if (!f)
+    return NULL;
+  fseek (f, 0, SEEK_END);
+  n = ftell (f);
+  fseek (f, 0, SEEK_SET);
+  d = malloc ((size_t) n + 1);
+  if (d && fread (d, 1, (size_t) n, f) != (size_t) n)
+    n = 0;
+  if (d)
+    d[n] = 0;
+  fclose (f);
+  return d;
+}
+
+static int count_marks (const gr_song *s, int kind)
+{
+  int i, k, n = 0;
+  for (i = 0; i < GR_MAX_PATTERNS; i++)
+    if (s->patterns[i].used)
+      for (k = 0; k < s->patterns[i].nmarks; k++)
+        n += s->patterns[i].marks[k].kind == kind;
+  return n;
+}
+
+static void test_score_marks (void)
+{
+  static gr_song s, s2;
+  const char *why;
+  gr_notation *nt;
+  gr_engraving *eg;
+  gr_engine *e;
+  gr_history *h;
+  char *xml = NULL;
+  int b, k, ok, n = 0;
+  float l[256], r[256];
+
+  gr_song_init (&s);
+  CHECK (gr_score_import (&s, "host/scores/marks.musicxml", 0, &why) == 1, "Marks: the test score imports");
+  CHECK (count_marks (&s, GR_MK_SLUR) == 1 && count_marks (&s, GR_MK_HAIRPIN) == 1 && count_marks (&s, GR_MK_DYNAMIC) == 2
+         && count_marks (&s, GR_MK_ARPEGGIO) == 1 && count_marks (&s, GR_MK_STACCATO) == 1
+         && count_marks (&s, GR_MK_ACCENT) == 1 && count_marks (&s, GR_MK_OTTAVA) == 1,
+         "Marks: the slur, crescendo, two dynamics, spread chord, staccato, accent and 8va line are read");
+  CHECK (s.tempo == 100 && s.ntempos == 1 && s.tempos[0].tick == gr_bar_tick (&s, 2) && fabs (s.tempos[0].bpm - 60) < 0.01,
+         "Tempo: 100, and a change to 60 from bar 3");
+  CHECK (fabs (gr_tick_seconds (&s, gr_bar_tick (&s, 4)) - (4.8 + 8.0)) < 1e-6
+         && fabs (gr_seconds_tick (&s, 6.0) - (2 * GR_BAR + 1.2 * GR_PPQ)) < 1e-6,
+         "Tempo: two bars at 100 take 4.8 s and two at 60 take 8 s; 6 s in is 1.2 beats into bar 3");
+
+  /* written as the score has it: none of it is in how the notes are played */
+  nt = gr_notation_make (&s, -1, 1);
+  ok = nt != NULL;
+  if (ok)
+    {
+      const gr_npart *p = &nt->parts[0];
+      int slur_s = 0, slur_e = 0, cresc = 0, stop = 0, arp = 0, st = 0, ac = 0, dp = 0, df = 0;
+      for (b = 0; b < nt->nbars; b++)
+        {
+          const gr_nrange *rg = &p->voice[b * GR_NVOICES];
+          for (k = 0; k < rg->n; k++)
+            {
+              const gr_nevent *ev = &nt->ev[rg->first + k];
+              slur_s += (ev->slur & NS_START) && b == 0 && ev->start == 0;
+              slur_e += (ev->slur & NS_STOP) && b == 0 && ev->start == 3 * GR_PPQ;
+              cresc += (ev->wedge & NW_CRESC) && b == 0 && ev->start == 0;
+              stop += (ev->wedge & NW_STOP) && b == 0;
+              arp += (ev->artic & NA_ARPEGGIO) && b == 1 && ev->start == 0 && ev->nheads == 3;
+              st += (ev->artic & NA_STACCATO) && b == 1 && ev->start == 2 * GR_PPQ;
+              ac += (ev->artic & NA_ACCENT) && b == 1 && ev->start == 3 * GR_PPQ;
+              dp += ev->dyn == ND_P && b == 0;
+              df += ev->dyn == ND_F && b == 1;
+              n += ev->dyn != 0;
+            }
+        }
+      ok = slur_s == 1 && slur_e == 1 && cresc == 1 && stop == 1 && arp == 1 && st == 1 && ac == 1 && dp == 1 && df == 1 && n == 2;
+      CHECK (p->ottava[2 * 2] == 1 && p->ottava[1 * 2] == 0 && p->ottava[3 * 2] == 0, "Marks: the 8va line over bar 3, as written");
+      CHECK (nt->bars[2].tempo == 60 && nt->bars[1].tempo == 0, "Marks: the tempo change shown at bar 3");
+    }
+  CHECK (ok, "Marks: slur, crescendo, p and f, spread chord, staccato and accent on the notes the score puts them");
+  eg = nt ? gr_engrave (nt, 0, 70 * EG_SP, NULL, s.tempo) : NULL;
+  CHECK (eg && count_kind (eg, EK_GLYPH, GL_ARPEGGIATO) == 1 && count_kind (eg, EK_GLYPH, GL_MET_QUARTER) == 2
+         && count_kind (eg, EK_SLUR, 0) >= 1 && count_kind (eg, EK_GLYPH, GL_OTTAVA_8VA) == 1,
+         "Engraved: the spread chord's wavy line, two metronome marks, the slur and the 8va");
+  gr_engraving_free (eg);
+  gr_notation_free (nt);
+
+  /* playing: it slows down at bar 3 */
+  e = gr_engine_new (&s);
+  gr_play (e);
+  for (k = 0; k < GR_RATE * 6 / 256; k++)
+    gr_render (e, l, r, 256);
+  CHECK (fabs (gr_position (e) - gr_seconds_tick (&s, k * 256.0 / GR_RATE)) < 2.0,
+         "Playing: 6 s in it's where the tempo change puts it (1.2 beats into bar 3, not 2 beats)");
+  gr_engine_free (e);
+
+  /* kept: saved and loaded, undone and redone, MusicXML and MIDI out */
+  CHECK (gr_song_save (&s, "/tmp/groove_marks.song") == 0 && (gr_song_init (&s2), gr_song_load (&s2, "/tmp/groove_marks.song") == 0)
+         && s2.ntempos == 1 && fabs (s2.tempos[0].bpm - 60) < 0.01 && count_marks (&s2, GR_MK_SLUR) == 1
+         && count_marks (&s2, GR_MK_OTTAVA) == 1 && count_marks (&s2, GR_MK_ARPEGGIO) == 1,
+         "Saved and loaded: the tempo change and the marks come back");
+  gr_song_free (&s2);
+  h = gr_history_new (10, 1 << 24);
+  gr_history_reset (h, &s);
+  gr_tempo_base (&s, 50);
+  for (b = 0; b < GR_MAX_PATTERNS; b++)
+    if (s.patterns[b].used)
+      s.patterns[b].nmarks = 0;
+  gr_history_note (h, &s);
+  CHECK (s.tempo == 50 && fabs (s.tempos[0].bpm - 30) < 0.01, "Tempo: halving the starting tempo halves the change too");
+  gr_history_undo (h, &s);
+  CHECK (s.tempo == 100 && s.ntempos == 1 && fabs (s.tempos[0].bpm - 60) < 0.01 && count_marks (&s, GR_MK_SLUR) == 1,
+         "Undo brings back the tempo change and the marks");
+  gr_history_free (h);
+  CHECK (gr_musicxml_export (&s, "/tmp/groove_marks.musicxml") == 0 && (xml = read_file ("/tmp/groove_marks.musicxml")) != NULL
+         && strstr (xml, "<arpeggiate/>") && strstr (xml, "<sound tempo=\"60.00\"/>") && strstr (xml, "octave-shift")
+         && strstr (xml, "<slur type=\"start\"") && strstr (xml, "wedge type=\"crescendo\""),
+         "MusicXML out: the spread chord, tempo change, 8va, slur and crescendo");
+  if (xml)
+    {
+      gr_song_init (&s2);
+      CHECK (gr_score_import (&s2, "/tmp/groove_marks.musicxml", 0, &why) == 1 && s2.ntempos == 1
+             && count_marks (&s2, GR_MK_ARPEGGIO) == 1 && count_marks (&s2, GR_MK_OTTAVA) == 1,
+             "and Groove reads its own MusicXML back with them");
+      gr_song_free (&s2);
+    }
+  free (xml);
+  CHECK (gr_midi_export (&s, "/tmp/groove_marks.mid") == 0 && (gr_song_init (&s2), gr_midi_import (&s2, "/tmp/groove_marks.mid", 0, &why) > 0)
+         && s2.tempo == 100 && s2.ntempos == 1 && s2.tempos[0].tick == gr_bar_tick (&s2, 2) && fabs (s2.tempos[0].bpm - 60) < 0.1,
+         "MIDI out and back in: the tempo change");
+  gr_song_free (&s2);
+  gr_song_free (&s);
+
+  /* a tempo change in bars of rest: the multi-bar rest is broken there
+     to show it (bars 2-4 and 5-9 rest, 60 from bar 5) */
+  {
+    int pp = one_part (&s, "Flute", 73, 10), sy, met = 0, rests = 0;
+    gr_pattern_add_note (&s.patterns[pp], 0, GR_BAR, 72, 80);
+    gr_pattern_add_note (&s.patterns[pp], 9 * GR_BAR, GR_BAR, 72, 80);
+    gr_tempo_add (&s, 4 * GR_BAR, 60);
+    nt = gr_notation_make (&s, -1, 1);
+    eg = nt ? gr_engrave (nt, 0, 70 * EG_SP, NULL, s.tempo) : NULL;
+    for (k = 0; eg && k < eg->n; k++)
+      {
+        met += eg->it[k].kind == EK_GLYPH && eg->it[k].glyph == GL_MET_QUARTER;
+        rests += eg->it[k].kind == EK_BEAM;          /* (a multi-bar rest's thick bar) */
+      }
+    (void) sy;
+    CHECK (met == 2 && rests == 2, "A tempo change in bars of rest: two multi-bar rests, the new tempo over the second");
+    gr_engraving_free (eg);
+    gr_notation_free (nt);
+    gr_song_free (&s);
+  }
+
+  /* the spread chord plays spread: C, E, G 35 ms apart from bar 2 (2.4 s in) */
+  gr_song_init (&s);
+  if (gr_score_import (&s, "host/scores/marks.musicxml", 0, &why) == 1)
+    {
+      int at[3] = { -1, -1, -1 }, pit[3] = { 72, 76, 79 }, j;
+      s.tracks[0].midi_out = 1;
+      e = gr_engine_new (&s);
+      mo_n = 0;
+      gr_engine_set_midi_out (e, mo_capture, NULL);
+      gr_play (e);
+      for (k = 0; k < GR_RATE * 3 / 256; k++)
+        gr_render (e, l, r, 256);
+      for (k = 0; k < mo_n; k++)
+        for (j = 0; j < 3; j++)
+          if ((mo_log[k].cmd & 0xF0) == 0x90 && ((mo_log[k].cmd >> 8) & 127) == (unsigned) pit[j]
+              && (mo_log[k].cmd >> 16 & 127) && mo_log[k].frame > GR_RATE * 23 / 10 && at[j] < 0)
+            at[j] = (int) mo_log[k].frame;
+      printf ("  spread chord: C at %d, E at %d, G at %d frames\n", at[0], at[1], at[2]);
+      CHECK (at[0] >= 0 && abs (at[0] - GR_RATE * 24 / 10) <= 128 && abs (at[1] - at[0] - GR_RATE * 35 / 1000) <= 128
+             && abs (at[2] - at[1] - GR_RATE * 35 / 1000) <= 128,
+             "Playing: the spread chord's notes start one after another, from the bottom, 35 ms apart");
+      gr_engine_free (e);
+
+      /* exported as MIDI, spread the same way (at 100 bpm 35 ms is 6 ticks) */
+      if (gr_midi_export (&s, "/tmp/groove_arp.mid") == 0)
+        {
+          int ons[3] = { -1, -1, -1 }, i2, kk;
+          gr_song_init (&s2);
+          if (gr_midi_import (&s2, "/tmp/groove_arp.mid", 0, &why) > 0)
+            for (i2 = 0; i2 < GR_MAX_REGIONS; i2++)
+              if (s2.regions[i2].used && s2.regions[i2].pattern >= 0)
+                for (kk = 0; kk < s2.patterns[s2.regions[i2].pattern].nnotes; kk++)
+                  {
+                    const gr_note *nn = &s2.patterns[s2.regions[i2].pattern].notes[kk];
+                    int on = s2.regions[i2].start + nn->tick;
+                    for (j = 0; j < 3; j++)
+                      if (nn->pitch == pit[j] && on >= GR_BAR && on < GR_BAR + GR_PPQ)
+                        ons[j] = on;
+                  }
+          CHECK (ons[0] == GR_BAR && ons[1] == GR_BAR + 6 && ons[2] == GR_BAR + 11,
+                 "MIDI out: the spread chord's notes start one after another there too");
+          gr_song_free (&s2);
+        }
+
+      /* spread downwards: an arrowhead at the bottom of the wavy line */
+      for (j = 0; j < GR_MAX_PATTERNS; j++)
+        if (s.patterns[j].used)
+          for (k = 0; k < s.patterns[j].nmarks; k++)
+            if (s.patterns[j].marks[k].kind == GR_MK_ARPEGGIO)
+              s.patterns[j].marks[k].value = -1;
+      nt = gr_notation_make (&s, -1, 1);
+      eg = nt ? gr_engrave (nt, 0, 70 * EG_SP, NULL, s.tempo) : NULL;
+      CHECK (eg && count_kind (eg, EK_GLYPH, GL_ARPEGGIATO) == 1 && count_kind (eg, EK_GLYPH, GL_ARROWHEAD_DOWN) == 1
+             && count_kind (eg, EK_GLYPH, GL_ARROWHEAD_UP) == 0,
+             "A chord spread downwards: the wavy line with an arrowhead down");
+      gr_engraving_free (eg);
+      gr_notation_free (nt);
+      e = gr_engine_new (&s);
+      mo_n = 0;
+      at[0] = at[1] = at[2] = -1;
+      gr_engine_set_midi_out (e, mo_capture, NULL);
+      gr_play (e);
+      for (k = 0; k < GR_RATE * 3 / 256; k++)
+        gr_render (e, l, r, 256);
+      for (k = 0; k < mo_n; k++)
+        for (j = 0; j < 3; j++)
+          if ((mo_log[k].cmd & 0xF0) == 0x90 && ((mo_log[k].cmd >> 8) & 127) == (unsigned) pit[j]
+              && (mo_log[k].cmd >> 16 & 127) && mo_log[k].frame > GR_RATE * 23 / 10 && at[j] < 0)
+            at[j] = (int) mo_log[k].frame;
+      CHECK (at[2] >= 0 && at[2] < at[1] && at[1] < at[0], "and played from the top down");
+      gr_engine_free (e);
+    }
+  gr_song_free (&s);
+
+  /* the same score as MuseScore writes it (spanners, Tempo, Ottava) */
+  gr_song_init (&s);
+  CHECK (gr_score_import (&s, "host/scores/marks.mscx", 0, &why) == 1
+         && count_marks (&s, GR_MK_SLUR) == 1 && count_marks (&s, GR_MK_HAIRPIN) == 1 && count_marks (&s, GR_MK_DYNAMIC) == 2
+         && count_marks (&s, GR_MK_ARPEGGIO) == 1 && count_marks (&s, GR_MK_STACCATO) == 1
+         && count_marks (&s, GR_MK_ACCENT) == 1 && count_marks (&s, GR_MK_OTTAVA) == 1,
+         "MuseScore: the slur, crescendo, dynamics, spread chord, staccato, accent and 8va line are read");
+  CHECK (s.tempo == 100 && s.ntempos == 1 && s.tempos[0].tick == gr_bar_tick (&s, 2) && fabs (s.tempos[0].bpm - 60) < 0.01,
+         "MuseScore: tempo 100, then 60 from bar 3");
+  nt = gr_notation_make (&s, -1, 1);
+  ok = nt != NULL;
+  if (ok)
+    {
+      const gr_npart *p = &nt->parts[0];
+      int sl = 0, cr = 0, ar = 0;
+      for (b = 0; b < nt->nbars; b++)
+        for (k = 0; k < p->voice[b * GR_NVOICES].n; k++)
+          {
+            const gr_nevent *ev = &nt->ev[p->voice[b * GR_NVOICES].first + k];
+            sl += b == 0 && ((ev->start == 0 && (ev->slur & NS_START)) || (ev->start == 3 * GR_PPQ && (ev->slur & NS_STOP)));
+            cr += b == 0 && ((ev->start == 0 && (ev->wedge & NW_CRESC)) || (ev->wedge & NW_STOP));
+            ar += b == 1 && ev->start == 0 && (ev->artic & NA_ARPEGGIO);
+          }
+      ok = sl == 2 && cr == 2 && ar == 1 && p->ottava[2 * 2] == 1 && p->ottava[3 * 2] == 0 && p->ottava[1 * 2] == 0;
+    }
+  CHECK (ok, "MuseScore: written where the score puts them, the 8va over bar 3 only");
+  gr_notation_free (nt);
+  gr_song_free (&s);
+}
+
+#define SUB_FRAMES 64
+/* Notes start and stop on time, to the sample: notes on odd ticks, of odd
+   lengths, at 117 bpm, sent to MIDI out, against when they should be. */
+static void test_timing (void)
+{
+  static gr_song s;
+  gr_engine *e;
+  int t, p, k, n = 0, worst = 0, worst_off = 0;
+  float l[256], r[256];
+  double spt = GR_RATE * 60.0 / (117.0 * GR_PPQ);
+  gr_song_init (&s);
+  s.tempo = 117;
+  t = gr_track_add (&s, TRK_INST, "Keys", PATCH_EPIANO);
+  p = gr_pattern_new (&s, "P", 16 * GR_BAR);
+  for (k = 31; k < 100; k++)
+    gr_pattern_add_note (&s.patterns[p], (k - 30) * 37, 23 + (k % 5) * 11, k, 100);
+  gr_region_add (&s, t, 0, 16 * GR_BAR, p);
+  s.tracks[t].midi_out = 1;
+  e = gr_engine_new (&s);
+  mo_n = 0;
+  gr_engine_set_midi_out (e, mo_capture, NULL);
+  gr_play (e);
+  for (k = 0; k < GR_RATE * 8 / 256; k++)
+    gr_render (e, l, r, 256);
+  for (k = 0; k < mo_n; k++)
+    {
+      unsigned st = mo_log[k].cmd & 0xF0, key = (mo_log[k].cmd >> 8) & 127;
+      double want;
+      if (st == 0x90 && (mo_log[k].cmd >> 16 & 127))
+        {
+          want = (key - 30) * 37 * spt;
+          if (fabs (mo_log[k].frame - want) > worst)
+            worst = (int) ceil (fabs (mo_log[k].frame - want));
+        }
+      else if (st == 0x80)
+        {
+          want = ((key - 30) * 37 + 23 + (key % 5) * 11) * spt;
+          if (mo_log[k].frame - want > worst_off || want - mo_log[k].frame > 1)
+            worst_off = (int) ceil (fabs (mo_log[k].frame - want));
+        }
+      else
+        continue;
+      n++;
+    }
+  printf ("  timing: %d note-ons and offs, ons at worst %d frames out, offs %d late\n", n, worst, worst_off);
+  CHECK (n > 60 && worst <= 1, "Timing: every note starts to the sample (within one frame of its tick)");
+  CHECK (worst_off <= SUB_FRAMES, "Timing: and stops within a block (64 frames, 1.5 ms) of its end, never early");
+  gr_engine_free (e);
+  gr_song_free (&s);
+}
+
 int main (int argc, char **argv)
 {
   test_loops ();
@@ -2796,6 +3145,8 @@ int main (int argc, char **argv)
   test_musicxml_export ();
   test_engrave ();
   test_signs ();
+  test_score_marks ();
+  test_timing ();
   if (getenv ("GROOVE_TEST_SOUNDFONT") && *getenv ("GROOVE_TEST_SOUNDFONT"))
     test_gm_play (getenv ("GROOVE_TEST_SOUNDFONT"));
   if (getenv ("GROOVE_TEST_SOUNDFONT") && *getenv ("GROOVE_TEST_SOUNDFONT"))

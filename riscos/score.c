@@ -98,7 +98,8 @@ int score_create (void)
   memset (b, 0, sizeof b);
   b[0] = 200; b[1] = 120; b[2] = 1400; b[3] = 900;
   b[6] = -1;
-  b[7] = (int) 0xBD000002;      /* back, close, title, toggle, vertical scroll, adjust size */
+  b[7] = (int) 0xBF000002;      /* back, close, title, toggle, vertical scroll, adjust size
+                                   (0.4 to 0.4.2-test2 had 0xBD: no close icon) */
   ((unsigned char *) b)[32] = 7;  ((unsigned char *) b)[33] = 2;
   ((unsigned char *) b)[34] = 7;  ((unsigned char *) b)[35] = 0;   /* white work area */
   ((unsigned char *) b)[36] = 3;  ((unsigned char *) b)[37] = 1;
@@ -128,6 +129,7 @@ static int repeats = 1;         /* music played again written once, in repeats *
 /* the score shown: the bar each of the song's bars is written in, and
    where each written bar starts (the first time it's played) */
 static int *shown_bar_of, shown_nsong, *shown_start, shown_nbars;
+static int paints;              /* (logged: the first few after making a score) */
 
 static int song_bars (void)
 {
@@ -139,11 +141,17 @@ static int song_bars (void)
    shown: it's the one the window shows (so keep where its bars are). */
 static gr_engraving *make (int track, int width, const char *title, int shown)
 {
-  gr_notation *nt = gr_notation_make_ex (&app.song, track, song_bars (),
-                                         (concert ? GR_NT_CONCERT : 0) | (repeats ? GR_NT_REPEATS : 0));
+  int t0 = log_time ();
+  gr_notation *nt;
   gr_engraving *g = NULL;
+  startlog ("score: track %d, width %d, %d bars: notation", track, width, song_bars ());
+  nt = gr_notation_make_ex (&app.song, track, song_bars (),
+                            (concert ? GR_NT_CONCERT : 0) | (repeats ? GR_NT_REPEATS : 0));
+  startlog ("score: notation %s, %d bars, %d parts, %d cs", nt ? "made" : "failed", nt ? nt->nbars : 0,
+            nt ? nt->nparts : 0, log_time () - t0);
   if (shown)
     {
+      paints = 0;
       free (shown_bar_of);
       free (shown_start);
       shown_bar_of = shown_start = NULL;
@@ -168,6 +176,7 @@ static gr_engraving *make (int track, int width, const char *title, int shown)
     }
   else if (nt)
     g = gr_engrave_parts (nt, &(int) { 0 }, 1, width, title, app.song.tempo, EG_MULTIRESTS);
+  startlog ("score: engraved, %d items, %d systems, %d cs", g ? g->n : -1, g ? g->nsys : 0, log_time () - t0);
   gr_notation_free (nt);
   return g;
 }
@@ -209,7 +218,9 @@ void score_set_repeats (int on)
 static void build (void)
 {
   int t = app.sel_track, w = visible_width ();
-  if (!dirty && (full_score || t == built_track) && w == built_width && eng)
+  /* (Not "&& eng": with nothing to show, building again on every redraw
+     asked for another redraw, for ever - the desktop froze.) */
+  if (!dirty && (full_score || t == built_track) && w == built_width)
     return;
   gr_engraving_free (eng);
   eng = NULL;
@@ -467,6 +478,8 @@ static int paint_smooth (int ox, int oy, const int *clip)
   rows = (y1 - y0 + ph - 1) / ph;
   if (w <= 0 || rows <= 0)
     return 1;
+  if (paints < 3)
+    startlog ("score: paint %d x %d pixels, %d bpp", w, rows, 1 << l2bpp);
   area = malloc (16 + 44 + (size_t) w * STRIP_ROWS * 4);
   if (!area)
     return 0;
@@ -524,6 +537,8 @@ static int paint_smooth (int ox, int oy, const int *clip)
       _swix (OS_SpriteOp, _INR (0, 7), 512 + 52, area, spr, x0, stop - hs * ph, 0, 0, tab);
     }
   free (area);
+  if (paints < 3 && ++paints)
+    startlog ("score: painted");
   for (i = 0; i < eng->n; i++)
     if (eng->it[i].kind == EK_TEXT)
       {

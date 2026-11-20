@@ -27,6 +27,7 @@
 #include "glyphs.h"
 
 #define SP EG_SP
+#define ARP_W (SP * 3 / 4)      /* a spread chord's wavy line, and room after it */
 #define HSP (SP / 2)
 
 #define STAFF_LINE   32
@@ -329,7 +330,7 @@ static int fit_bar (const gr_notation *nt, const gr_npart *const *ps, int nps, i
   f->natural = SP * 6 / 5;
   for (i = 0; i < f->n; i++)
     {
-      int next = i + 1 < f->n ? f->t[i + 1] : bar->len, need = gw (GL_HEAD_BLACK) + SP / 2, accs = 0;
+      int next = i + 1 < f->n ? f->t[i + 1] : bar->len, need = gw (GL_HEAD_BLACK) + SP / 2, accs = 0, arp = 0;
       f->seg[i] = room_for (next - f->t[i]);
       f->pre[i] = 0;
       for (pi = 0; pi < nps; pi++)
@@ -342,6 +343,8 @@ static int fit_bar (const gr_notation *nt, const gr_npart *const *ps, int nps, i
               int h, a = 0;
               if (e->start != f->t[i])
                 continue;
+              if (e->artic & NA_ARPEGGIO)
+                arp = 1;
               if (e->kind == NE_BAR_REST)
                 f->seg[i] = SP * 6;
               if (e->dots)
@@ -362,6 +365,8 @@ static int fit_bar (const gr_notation *nt, const gr_npart *const *ps, int nps, i
         f->seg[i] = need;
       if (accs)
         f->pre[i] = (accs > 2 ? 2 : accs) * (gw (GL_SHARP) + SP / 8) + SP / 6;
+      if (arp)
+        f->pre[i] += ARP_W;               /* room for a spread chord's wavy line */
       f->natural += f->seg[i] + f->pre[i];
     }
   return 0;
@@ -516,7 +521,30 @@ static int marks (drawer *d, int staff, int voice, int two_voices, const gr_neve
   int top = pos_y (d, staff, 8), bot = pos_y (d, staff, 0), cx = pl->x + hw / 2, y, sv = staff * 2 + voice;
   /* the note's outside edge on the marks' side */
   int edge = above ? (stem_side ? pl->tip : pl->hi) : (stem_side ? pl->tip : pl->lo);
-  if (e->artic)
+  if ((e->artic & NA_ARPEGGIO) && voice == 0)
+    {
+      /* a spread chord: the wavy line up its left, past the accidentals */
+      int h = pl->hi - pl->lo + SP * 3 / 2, sc = h * 100 / 1358, ax;
+      int a, accs = 0;
+      for (a = 0; a < e->nheads; a++)
+        if (d->acc[e->head + a] != NO_ACC)
+          accs++;
+      if (sc < 30)
+        sc = 30;
+      ax = pl->x - (accs > 2 ? 2 : accs) * (gw (GL_SHARP) + SP / 8) - ARP_W;
+      if (glyph (d->e, GL_ARPEGGIATO, ax, pl->lo - SP * 3 / 4, sc))
+        return -1;
+      /* the way it's spread, if the score says: an arrowhead at that end */
+      if (e->artic & (NA_ARP_DOWN | NA_ARP_UP))
+        {
+          int g = e->artic & NA_ARP_DOWN ? GL_ARROWHEAD_DOWN : GL_ARROWHEAD_UP, as = 60;
+          int cx = ax + gr_glyphs[GL_ARPEGGIATO].x1 * sc / 200, gwh = gr_glyphs[g].x1 * as / 100;
+          int top = pl->lo - SP * 3 / 4 + gr_glyphs[GL_ARPEGGIATO].y1 * sc / 100;
+          if (glyph (d->e, g, cx - gwh / 2, e->artic & NA_ARP_DOWN ? pl->lo - SP * 3 / 4 - gr_glyphs[g].y1 * as / 100 : top, as))
+            return -1;
+        }
+    }
+  if (e->artic & ~(NA_ARPEGGIO | NA_ARP_DOWN | NA_ARP_UP))
     {
       /* the dot: a space beyond the note (outside the stem), in a space */
       if (stem_side)
@@ -1312,7 +1340,8 @@ gr_engraving *gr_engrave_parts (const gr_notation *nt, const int *parts, int npa
                && (n == 0 || (nt->bars[b + n].num == nt->bars[b].num && nt->bars[b + n].den == nt->bars[b].den
                               && !(nt->bars[b + n].rep & NR_START) && !(nt->bars[b + n - 1].rep & NR_END)
                               && nt->bars[b + n].ending == nt->bars[b].ending && !nt->bars[b + n].ending_start
-                              && !clef_change_width (ps, nparts, b + n) && !keys_change_width (ps, nparts, b + n))))
+                              && !clef_change_width (ps, nparts, b + n) && !keys_change_width (ps, nparts, b + n)
+                              && !nt->bars[b + n].tempo)))   /* (a new tempo starts a new one, to be shown) */
           n++;
         if (n >= 2)
           {
@@ -1625,6 +1654,21 @@ gr_engraving *gr_engrave_parts (const gr_notation *nt, const int *parts, int npa
                 {
                   bxa[b + k] = bx0;
                   bxb[b + k] = bx1;
+                }
+              /* a change of tempo: its metronome mark over the bar (over a
+                 multi-bar rest's number, if it starts one) */
+              if (b > 0 && nb->tempo > 0)
+                {
+                  char t[16];
+                  int from = e->n, ty = top + (run[b] > 1 ? SP * 4 : SP * 3 / 2);
+                  snprintf (t, sizeof t, "= %d", nb->tempo);
+                  if (glyph (e, GL_MET_QUARTER, bx0 + SP / 2, ty, 60)
+                      || text (e, bx0 + SP / 2 + gw (GL_MET_QUARTER) * 6 / 10 + SP / 3, ty, SP * 3 / 2, t))
+                    {
+                      free (ox);
+                      goto fail;
+                    }
+                  extent (e, from, e->n, &ext_lo[0], &ext_hi[0]);
                 }
               if (run[b] > 1)
                 {

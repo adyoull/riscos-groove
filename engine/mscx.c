@@ -109,7 +109,91 @@ typedef struct
   unsigned volta_bits;
   char volta_id[16];            /* MuseScore 2: the open volta, until its endSpanner */
   char pedal_id[16];            /* MuseScore 2: the pedal held down, until its endSpanner */
+  int staff;                    /* which of its part's staves (0, 1) */
 } reader;
+
+/* A spanner starting here (it has <next>): where it ends, as MuseScore
+   writes it - measures and fractions on from this measure and this
+   point in it. 0 if this is its end (<prev>). */
+static int span_end (const gx_node *sp, int m, double pos, int *em, double *eoff)
+{
+  const gx_node *nx = gx_child (sp, "next"), *loc = nx ? gx_child (nx, "location") : NULL;
+  if (!nx)
+    return 0;
+  *em = m + (loc ? gx_int (loc, "measures", 0) : 0);
+  *eoff = pos + (loc && gx_child (loc, "fractions") ? fraction_q (gx_text (loc, "fractions")) : 0);
+  return 1;
+}
+
+/* A dynamic's name as notation.h's ND_PPP..ND_FFF (1..8), or 0. */
+static int dyn_level (const char *t)
+{
+  static const char *n[] = { "ppp", "pp", "p", "mp", "mf", "f", "ff", "fff" };
+  int i;
+  for (i = 0; i < 8; i++)
+    if (!strcmp (t, n[i]))
+      return i + 1;
+  return 0;
+}
+
+/* An 8va line's subtype: "8va", "8vb", "15ma", "15mb" (MuseScore 3 and
+   4), or 0..3 in that order (older files). */
+static int ottava_shift (const char *t)
+{
+  if (!strncmp (t, "8va", 3) || !strcmp (t, "0")) return 1;
+  if (!strncmp (t, "8vb", 3) || !strcmp (t, "1")) return -1;
+  if (!strncmp (t, "15ma", 4) || !strcmp (t, "2")) return 2;
+  if (!strncmp (t, "15mb", 4) || !strcmp (t, "3")) return -2;
+  return 0;
+}
+
+/* The written marks on a chord: slurs from it, a spread chord,
+   staccato and accents. */
+static int chord_marks (reader *r, const gx_node *chord, int m, double pos)
+{
+  const gx_node *c;
+  for (c = chord->child; c; c = c->next)
+    {
+      if (!strcmp (c->name, "Spanner") && gx_attr (c, "type") && !strcmp (gx_attr (c, "type"), "Slur"))
+        {
+          int em;
+          double eoff;
+          if (span_end (c, m, pos, &em, &eoff)
+              && gs_add_mark (r->part, m, pos, em, eoff, GR_MK_SLUR, 0, 0, r->staff))
+            return -1;
+        }
+      else if (!strcmp (c->name, "Arpeggio"))
+        {
+          /* subtype: 0 plain, 1 up, 2 down, 3 a bracket (not spread), 4 and 5
+             straight up and down */
+          int t = gx_int (c, "subtype", 0), lo = 127, hi = 0, p;
+          const gx_node *nt;
+          /* (only this chord's notes are spread: not the other hand's) */
+          for (nt = gx_child (chord, "Note"); nt; nt = gx_next (nt, "Note"))
+            if ((p = gx_int (nt, "pitch", -1)) >= 0)
+              {
+                if (p < lo) lo = p;
+                if (p > hi) hi = p;
+              }
+          if (t != 3 && hi >= lo)
+            {
+              if (gs_add_mark (r->part, m, pos, -1, 0, GR_MK_ARPEGGIO,
+                               t == 2 || t == 5 ? -1 : t == 1 || t == 4 ? 2 : 1, lo, r->staff))
+                return -1;
+              r->part->marks[r->part->nmarks - 1].hi = hi;
+            }
+        }
+      else if (!strcmp (c->name, "Articulation"))
+        {
+          const char *t = gx_child (c, "subtype") ? gx_text (c, "subtype") : gx_text (c, NULL);
+          int kind = strstr (t, "taccat") ? GR_MK_STACCATO
+            : strstr (t, "ccent") || strstr (t, "sforzato") || strstr (t, "arcato") ? GR_MK_ACCENT : 0;
+          if (kind && gs_add_mark (r->part, m, pos, -1, 0, kind, 0, 0, r->staff))
+            return -1;
+        }
+    }
+  return 0;
+}
 
 /* MuseScore 2's voltas: <Volta id> where one starts, and <endSpanner id>
    where it has ended - before the measure's notes if it ended with the
@@ -196,15 +280,38 @@ static int read_voice (reader *r, const gx_node *voice, int m, double mlen, doub
         }
       else if (!strcmp (n, "Dynamic"))
         {
-          int v = gx_int (e, "velocity", 0);
+          int v = gx_int (e, "velocity", 0), d = dyn_level (gx_text (e, "subtype"));
           if (v > 0)
             r->vel = v > 127 ? 127 : v;
+          if (d && gs_add_mark (r->part, m, pos, -1, 0, GR_MK_DYNAMIC, d, 0, r->staff))
+            return -1;
         }
       else if (!strcmp (n, "Tempo"))
         {
+          /* (in beats a second, in quarters; written on the first staff) */
           double t = gx_num (e, "tempo", 0);
-          if (t > 0 && r->sc->tempo == 0)
-            r->sc->tempo = t * 60;
+          if (t > 0 && (r->first_staff || r->sc->tempo == 0) && gs_add_tempo (r->sc, m, pos, t * 60))
+            return -1;
+        }
+      else if (!strcmp (n, "Spanner") && gx_attr (e, "type")
+               && (!strcmp (gx_attr (e, "type"), "HairPin") || !strcmp (gx_attr (e, "type"), "Ottava")))
+        {
+          int em, hair = !strcmp (gx_attr (e, "type"), "HairPin"), v;
+          double eoff;
+          const gx_node *h = gx_child (e, hair ? "HairPin" : "Ottava");
+          if (h && span_end (e, m, pos, &em, &eoff))
+            {
+              if (hair)
+                {
+                  /* subtype 0, 2: crescendo (a hairpin, or "cresc."); 1, 3: diminuendo */
+                  v = gx_int (h, "subtype", 0) & 1 ? 2 : 1;
+                  if (gs_add_mark (r->part, m, pos, em, eoff, GR_MK_HAIRPIN, v, 0, r->staff))
+                    return -1;
+                }
+              else if ((v = ottava_shift (gx_text (h, "subtype"))) != 0
+                       && gs_add_mark (r->part, m, pos, em, eoff, GR_MK_OTTAVA, v, 0, r->staff))
+                return -1;
+            }
         }
       else if (!strcmp (n, "Spanner") && gx_attr (e, "type") && !strcmp (gx_attr (e, "type"), "Pedal"))
         {
@@ -267,6 +374,8 @@ static int read_voice (reader *r, const gx_node *voice, int m, double mlen, doub
               double snd = len;
               if (is_grace (e))
                 continue;
+              if (chord_marks (r, e, m, pos))
+                return -1;
               /* staccato: half its value, as MuseScore plays it */
               for (ar = gx_child (e, "Articulation"); ar; ar = gx_next (ar, "Articulation"))
                 if (strstr (gx_text (ar, "subtype"), "taccat") || strstr (gx_text (ar, NULL), "taccat"))
@@ -390,6 +499,8 @@ int gs_read_mscx (gs_score *sc, char *xml, size_t n, const char **why)
         first = sid;
       r.part = &sc->parts[staff_part[sid]];
       r.first_staff = sid == first;
+      for (k = sid - 1, r.staff = 0; k >= 1 && staff_part[k] == staff_part[sid]; k--)
+        r.staff++;
       r.vel = 80;
       r.pending_volta_end = 0;
       for (meas = gx_child (e, "Measure"); meas; meas = gx_next (meas, "Measure"), m++)

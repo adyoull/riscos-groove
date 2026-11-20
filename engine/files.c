@@ -150,7 +150,7 @@ int gr_wav_import (gr_song *s, const char *path, int track, int tick)
   s->clips[c].frames = s->clips[c].cap = frames;
   tick = gr_bar_snap (s, tick);
   r = gr_region_add (s, track, tick,
-                     (int) ((double) frames / rate * s->tempo / 60.0 * GR_PPQ) + 1, -1);
+                     (int) (gr_seconds_tick (s, gr_tick_seconds (s, tick) + (double) frames / rate) - tick) + 1, -1);
   if (r < 0)
     {
       gr_song_gc (s);
@@ -206,6 +206,9 @@ int gr_song_save (const gr_song *s, const char *path)
   for (i = 0; i < s->nmeters; i++)
     if (i > 0 || s->meters[i].num != 4 || s->meters[i].den != 4)
       fprintf (f, "meter %d %d %d\n", s->meters[i].bar, s->meters[i].num, s->meters[i].den);
+  /* Tempo changes after the start (older Groove ignores them). */
+  for (i = 0; i < s->ntempos; i++)
+    fprintf (f, "tempo_at %d %.3f\n", s->tempos[i].tick, (double) s->tempos[i].bpm);
   for (i = 0; i < s->ntracks; i++)
     {
       const gr_track *t = &s->tracks[i];
@@ -227,6 +230,9 @@ int gr_song_save (const gr_song *s, const char *path)
                  p->notes[k].pitch, p->notes[k].vel);
       for (k = 0; k < p->nctls; k++)
         fprintf (f, "c %d %d %d\n", p->ctls[k].tick, p->ctls[k].type, p->ctls[k].value);
+      for (k = 0; k < p->nmarks; k++)      /* (written marks: older Groove skips them) */
+        fprintf (f, "m %d %d %d %d %d %d\n", p->marks[k].tick, p->marks[k].len, p->marks[k].kind,
+                 p->marks[k].value, p->marks[k].pitch, p->marks[k].staff);
       fprintf (f, "end\n");
     }
   for (i = 0; i < GR_MAX_CLIPS; i++)
@@ -279,6 +285,13 @@ int gr_song_load (gr_song *s, const char *path)
             gr_pattern_add_note (cur, a, b, c, d);
           else if (sscanf (line, "c %d %d %d", &a, &b, &c) == 3)
             gr_pattern_set_ctl (cur, a, b, c);
+          else if (sscanf (line, "m %d %d %d %d %d %d", &a, &b, &c, &d, &e, &g) == 6 && c > 0 && c < GR_MK_KINDS)
+            {
+              gr_mark m;
+              m.tick = (int16_t) a; m.len = (int16_t) b; m.kind = (uint8_t) c;
+              m.value = (int8_t) d; m.pitch = (uint8_t) e; m.staff = (uint8_t) g;
+              gr_pattern_add_mark (cur, &m);
+            }
           else if (!strncmp (line, "end", 3))
             cur = NULL;
           continue;
@@ -291,6 +304,7 @@ int gr_song_load (gr_song *s, const char *path)
       else if (sscanf (line, "metronome %d", &a) == 1) s->metronome = a;
       else if (sscanf (line, "master %f", &x) == 1) s->master = x;
       else if (sscanf (line, "meter %d %d %d", &a, &b, &c) == 3) gr_set_meter (s, a, b, c);
+      else if (sscanf (line, "tempo_at %d %f", &a, &x) == 2) gr_tempo_add (s, a, x);
       else if (sscanf (line, "track %d %d", &a, &b) == 2)
         {
           int t;

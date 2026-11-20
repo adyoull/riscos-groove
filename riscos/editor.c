@@ -361,7 +361,8 @@ static int local_step (void)
   double pos;
   if (!r || !p || !gr_playing (app.eng))
     return -1;
-  pos = gr_position (app.eng) - sound_latency () / (GR_RATE * 60.0 / ((double) app.song.tempo * GR_PPQ));
+  pos = gr_position (app.eng);
+  pos -= sound_latency () / (GR_RATE * 60.0 / (gr_tempo_at (&app.song, (int) pos) * GR_PPQ));
   if (pos < r->start || pos >= r->start + r->len)
     return -1;
   return ((int) (pos - r->start) % p->len) / GR_STEP;
@@ -939,7 +940,7 @@ static void head_click (int *b, int wx)
   if (!p)
     return;
   if (i == EB_CLEAR)
-    p->nnotes = p->nctls = 0;
+    p->nnotes = p->nctls = p->nmarks = 0;
   else
     {
       int len = (i == EB_LEN1 ? 1 : i == EB_LEN2 ? 2 : 4) * region_bar (), k;
@@ -965,6 +966,8 @@ static void head_click (int *b, int wx)
           for (k = p->nctls - 1; k >= 0; k--)
             if (p->ctls[k].tick >= len)
               gr_pattern_delete_ctl (p, k);
+          while (p->nmarks > 0 && p->marks[p->nmarks - 1].tick >= len)
+            p->nmarks--;
           p->len = len;
         }
     }

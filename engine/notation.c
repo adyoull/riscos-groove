@@ -126,6 +126,68 @@ static int track_notes (const gr_song *s, int t, xlist *l)
   return 0;
 }
 
+/* The marks written in a track's patterns (from an imported score), in
+   song ticks, in order. */
+typedef struct { int on, len, kind, value, staff; } xmark;
+
+static int cmp_xmark (const void *a, const void *b)
+{
+  const xmark *x = a, *y = b;
+  return x->on != y->on ? (x->on < y->on ? -1 : 1) : x->kind - y->kind;
+}
+
+static int track_marks (const gr_song *s, int t, xmark **out)
+{
+  xmark *m = NULL;
+  int n = 0, cap = 0, i, k, rep;
+  for (i = 0; i < GR_MAX_REGIONS; i++)
+    {
+      const gr_region *r = &s->regions[i];
+      const gr_pattern *pt;
+      if (!r->used || r->track != t || r->pattern < 0 || r->clip >= 0)
+        continue;
+      pt = &s->patterns[r->pattern];
+      if (pt->len <= 0)
+        continue;
+      for (rep = 0; rep * pt->len < r->len; rep++)
+        for (k = 0; k < pt->nmarks; k++)
+          {
+            int at = r->start + rep * pt->len + pt->marks[k].tick;
+            if (at >= r->start + r->len)
+              continue;
+            if (n == cap)
+              {
+                xmark *a = realloc (m, (size_t) (cap = cap ? cap * 2 : 64) * sizeof *a);
+                if (!a)
+                  {
+                    free (m);
+                    return -1;
+                  }
+                m = a;
+              }
+            m[n].on = at;
+            m[n].len = pt->marks[k].len;
+            m[n].kind = pt->marks[k].kind;
+            m[n].value = pt->marks[k].value;
+            m[n].staff = pt->marks[k].staff;
+            n++;
+          }
+    }
+  if (n > 1)
+    qsort (m, (size_t) n, sizeof *m, cmp_xmark);
+  *out = m;
+  return n;
+}
+
+static int has_mark (const xmark *m, int n, int kind, int on)
+{
+  int i;
+  for (i = 0; i < n; i++)
+    if (m[i].kind == kind && m[i].on >= on - 2 && m[i].on <= on + 2)
+      return 1;
+  return 0;
+}
+
 /* The sustain pedal (controller 64) as the part's pedal marks: where it
    goes down and comes up, to the nearest 32nd note, up at the end if it's
    still down then. */
@@ -761,12 +823,15 @@ static int starts_at (const int *ons, int nons, int t)
   return lo < nons && ons[lo] == t;
 }
 
-static void staccato (const gr_song *s, xlist *x, const xbar *bars, int nbars, const int *ons, int nons)
+/* (A part from a score with marks (nm >= 0): a note is staccato where the
+   score says, and only there.) */
+static void staccato (const gr_song *s, xlist *x, const xbar *bars, int nbars, const int *ons, int nons,
+                      const xmark *mk, int nm)
 {
   int k = 0, sounding = 0;
   while (k < x->count)
     {
-      int j, g = k, on = x->n[k].on, next = -1, bb, beat, slot, ok = 1, into;
+      int j, g = k, on = x->n[k].on, next = -1, bb, beat, slot, ok = 1, into, marked = 0;
       while (g < x->count && x->n[g].on == on)
         g++;
       for (j = g; j < x->count; j++)
@@ -788,23 +853,37 @@ static void staccato (const gr_song *s, xlist *x, const xbar *bars, int nbars, c
       /* only a plain value: an 8th, a quarter, a dotted 8th... */
       if (slot != 24 && slot != 36 && slot != 48 && slot != 72 && slot != 96 && slot != 144)
         ok = 0;
-      for (j = k; j < g && ok; j++)
+      if (nm >= 0)
         {
-          int d = x->n[j].off - x->n[j].on;
-          if (d * 2 > slot || slot - d < 24 || x->n[j].off > on + slot || starts_at (ons, nons, x->n[j].off))
+          marked = has_mark (mk, nm, GR_MK_STACCATO, on);
+          if (!marked)
+            ok = 0;
+          for (j = k; j < g && ok; j++)
+            if (x->n[j].off > on + slot)
+              ok = 0;
+        }
+      else
+        {
+          for (j = k; j < g && ok; j++)
+            {
+              int d = x->n[j].off - x->n[j].on;
+              if (d * 2 > slot || slot - d < 24 || x->n[j].off > on + slot || starts_at (ons, nons, x->n[j].off))
+                ok = 0;
+            }
+          /* nothing else in the voice still sounding then */
+          if (sounding > on)
+            ok = 0;
+          if (ok && next < 0 && slot < 48)
             ok = 0;
         }
-      /* nothing else in the voice still sounding then */
-      if (sounding > on)
-        ok = 0;
-      if (ok && next < 0 && slot < 48)
-        ok = 0;
       for (j = k; j < g && ok; j++)
         {
           x->n[j].release = x->n[j].off - (on + slot);
           x->n[j].off = on + slot;
           x->n[j].flags |= XF_STACC;
         }
+      for (j = k; j < g && marked && !ok; j++)
+        x->n[j].flags |= XF_STACC;        /* (the dot, on the note as long as it's played) */
       for (j = k; j < g; j++)
         if (x->n[j].off > sounding)
           sounding = x->n[j].off;
@@ -1636,7 +1715,8 @@ static int same_bars (const gr_notation *nt, const int *dl, int a, int b)
 {
   const gr_nbar *x = &nt->bars[a], *y = &nt->bars[b];
   int p, z, k, j;
-  if (x->len != y->len || x->num != y->num || x->den != y->den || x->fifths != y->fifths || x->minor != y->minor)
+  if (x->len != y->len || x->num != y->num || x->den != y->den || x->fifths != y->fifths || x->minor != y->minor
+      || x->tempo != y->tempo)
     return 0;
   for (p = 0; p < nt->nparts; p++)
     {
@@ -2140,6 +2220,119 @@ static int choose_clefs (gr_npart *p, const xlist *v, const xbar *bars, int nbar
   return 0;
 }
 
+/* ---- a score's own marks ------------------------------------------------- */
+
+static int bar_at (const xbar *bars, int nbars, int t)
+{
+  int lo = 0, hi = nbars - 1;
+  while (lo < hi)
+    {
+      int mid = (lo + hi + 1) / 2;
+      if (bars[mid].start <= t)
+        lo = mid;
+      else
+        hi = mid - 1;
+    }
+  return lo;
+}
+
+/* The score's 8va and 15ma lines, in place of those Groove would choose. */
+static void score_ottavas (gr_npart *p, const xmark *m, int n, const xbar *bars, int nbars)
+{
+  int i, b;
+  memset (p->ottava, 0, (size_t) nbars * 2);
+  memset (p->ott_start, 0, (size_t) nbars * 2 * sizeof *p->ott_start);
+  memset (p->ott_end, 0, (size_t) nbars * 2 * sizeof *p->ott_end);
+  for (i = 0; i < n; i++)
+    if (m[i].kind == GR_MK_OTTAVA && m[i].len > 0 && m[i].value)
+      {
+        int z = m[i].staff < p->staves ? m[i].staff : p->staves - 1, end = m[i].on + m[i].len;
+        int b0 = bar_at (bars, nbars, m[i].on), b1 = bar_at (bars, nbars, end - 1);
+        for (b = b0; b <= b1; b++)
+          p->ottava[b * 2 + z] = (signed char) m[i].value;
+        p->ott_start[b0 * 2 + z] = m[i].on - bars[b0].start;
+        p->ott_end[b1 * 2 + z] = end < bars[b1].start + bars[b1].len ? end - bars[b1].start : 0;
+      }
+}
+
+/* A note on a staff (any voice) starting at song tick t or, after: the
+   next one after it (within two bars); before: the last one at or before
+   it. -1 if none. */
+static int note_near (const gr_notation *nt, const gr_npart *p, int staff, int t, int after, int *when)
+{
+  int b = bar_at (nt->bars, nt->nbars, t), best = -1, bt = 0, b1, z, k;
+  for (b1 = b; b1 >= 0 && b1 < nt->nbars && (after ? b1 <= b + 2 : b1 >= b - 2); b1 += after ? 1 : -1)
+    {
+      for (z = staff * 2; z < staff * 2 + 2; z++)
+        {
+          const gr_nrange *r = &p->voice[b1 * GR_NVOICES + z];
+          for (k = 0; k < r->n; k++)
+            {
+              const gr_nevent *e = &nt->ev[r->first + k];
+              int at = nt->bars[b1].start + e->start;
+              if (e->kind != NE_NOTE || starts (nt, e) < 0)
+                continue;
+              if (after ? (at >= t - 2 && (best < 0 || at < bt)) : (at <= t + 2 && (best < 0 || at > bt)))
+                best = r->first + k, bt = at;
+            }
+        }
+      if (best >= 0)
+        break;
+    }
+  if (when)
+    *when = bt;
+  return best;
+}
+
+/* Dynamics, hairpins, accents, slurs and spread chords as the score
+   wrote them (rather than from how the notes are played). */
+static void score_marks (gr_notation *nt, gr_npart *p, const xmark *m, int n)
+{
+  int i;
+  for (i = 0; i < n; i++)
+    {
+      int z = m[i].staff < p->staves ? m[i].staff : p->staves - 1, a, e, w;
+      switch (m[i].kind)
+        {
+        case GR_MK_DYNAMIC:
+          if ((a = note_near (nt, p, z, m[i].on, 1, &w)) >= 0 && m[i].value >= ND_PPP && m[i].value <= ND_FFF)
+            nt->ev[a].dyn = (unsigned char) m[i].value;
+          break;
+        case GR_MK_HAIRPIN:
+          a = note_near (nt, p, z, m[i].on, 1, &w);
+          e = note_near (nt, p, z, m[i].on + m[i].len - 1, 0, NULL);
+          if (a >= 0 && e > a && !(nt->ev[a].wedge & (NW_CRESC | NW_DIM)) && !(nt->ev[e].wedge & NW_STOP))
+            {
+              nt->ev[a].wedge |= m[i].value == 2 ? NW_DIM : NW_CRESC;
+              nt->ev[e].wedge |= NW_STOP;
+            }
+          break;
+        case GR_MK_SLUR:
+          if (p->drums)
+            break;
+          a = note_near (nt, p, z, m[i].on, 1, &w);
+          e = note_near (nt, p, z, m[i].on + m[i].len, 0, NULL);
+          if (a >= 0 && e > a && !(nt->ev[a].slur & NS_START) && !(nt->ev[e].slur & NS_STOP))
+            {
+              nt->ev[a].slur |= NS_START;
+              nt->ev[e].slur |= NS_STOP;
+            }
+          break;
+        case GR_MK_ACCENT:
+          /* (on the chord it's written on, not the next) */
+          if ((a = note_near (nt, p, z, m[i].on, 1, &w)) >= 0 && w <= m[i].on + 2)
+            nt->ev[a].artic |= NA_ACCENT;
+          break;
+        case GR_MK_ARPEGGIO:
+          /* (a piano's chord Groove writes on both staves is spread on both) */
+          for (z = 0; z < p->staves; z++)
+            if ((a = note_near (nt, p, z, m[i].on, 1, &w)) >= 0 && w <= m[i].on + 2)
+              nt->ev[a].artic |= NA_ARPEGGIO | (m[i].value < 0 ? NA_ARP_DOWN : m[i].value == 2 ? NA_ARP_UP : 0);
+          break;
+        }
+    }
+}
+
 gr_notation *gr_notation_make (const gr_song *s, int track, int min_bars)
 {
   return gr_notation_make_ex (s, track, min_bars, 0);
@@ -2150,6 +2343,8 @@ gr_notation *gr_notation_make_ex (const gr_song *s, int track, int min_bars, int
   static xlist v[GR_MAX_TRACKS][GR_NVOICES];
   static unsigned char *tp[GR_MAX_TRACKS][GR_NVOICES];
   static int tr_shift[GR_MAX_TRACKS];
+  static xmark *mk[GR_MAX_TRACKS];
+  static int nmk[GR_MAX_TRACKS];
   int *kf = NULL, *km = NULL, *wf = NULL;
   int nst[GR_MAX_TRACKS], t, k, z, last = 0, nbars, b, ok = 0;
   gr_notation *nt = calloc (1, sizeof *nt);
@@ -2158,6 +2353,8 @@ gr_notation *gr_notation_make_ex (const gr_song *s, int track, int min_bars, int
     return NULL;
   memset (v, 0, sizeof v);
   memset (tp, 0, sizeof tp);
+  memset (mk, 0, sizeof mk);
+  memset (nmk, 0, sizeof nmk);
   memset (nst, 0, sizeof nst);
 
   /* Each drum or instrument track's notes, on one staff or two. (All of
@@ -2169,6 +2366,11 @@ gr_notation *gr_notation_make_ex (const gr_song *s, int track, int min_bars, int
       const gr_track *tr = &s->tracks[t];
       if (tr->type == TRK_AUDIO)
         continue;
+      if ((nmk[t] = track_marks (s, t, &mk[t])) < 0)
+        {
+          nmk[t] = 0;
+          goto fail;
+        }
       if (track_notes (s, t, &all))
         {
           free (all.n);
@@ -2247,6 +2449,14 @@ gr_notation *gr_notation_make_ex (const gr_song *s, int track, int min_bars, int
       bars[b].compound = is_compound (m->num, m->den);
       bars[b].beat = bars[b].compound ? DIV * 4 / m->den * 3 : DIV * 4 / m->den;
     }
+  /* tempo changes (the song's start has its own mark) */
+  for (k = 0; k < s->ntempos; k++)
+    if (s->tempos[k].tick > 0)
+      {
+        b = bar_at (bars, nbars, s->tempos[k].tick);
+        if (s->tempos[k].tick < bars[b].start + bars[b].len)
+          bars[b].tempo = (int) (s->tempos[k].bpm + 0.5);
+      }
   nt->bars = bars;
   nt->nbars = nbars;
   for (t = 0; t < s->ntracks; t++)
@@ -2277,7 +2487,7 @@ gr_notation *gr_notation_make_ex (const gr_song *s, int track, int min_bars, int
         if (v[t][z].count)
           {
             if (s->tracks[t].type == TRK_INST)
-              staccato (s, &v[t][z], bars, nbars, ons, nons);
+              staccato (s, &v[t][z], bars, nbars, ons, nons, mk[t], nmk[t] > 0 ? nmk[t] : -1);
             else
               drum_lengths (s, &v[t][z], bars, nbars);
           }
@@ -2365,6 +2575,8 @@ gr_notation *gr_notation_make_ex (const gr_song *s, int track, int min_bars, int
         }
       if (choose_clefs (p, v[t], bars, nbars, &s->tracks[t]))
         goto fail;
+      if (nmk[t] > 0 && !p->drums)
+        score_ottavas (p, mk[t], nmk[t], bars, nbars);
       p->voice = calloc ((size_t) nbars * GR_NVOICES, sizeof *p->voice);
       if (!p->voice)
         goto fail;
@@ -2390,7 +2602,10 @@ gr_notation *gr_notation_make_ex (const gr_song *s, int track, int min_bars, int
                 r->n = 0;
               }
           }
-      mark_playing (nt, p);
+      if (nmk[t] > 0)
+        score_marks (nt, p, mk[t], nmk[t]);
+      else
+        mark_playing (nt, p);
     }
   nt->nsong = nbars;
   if (!(nt->bar_of = malloc ((size_t) nbars * sizeof *nt->bar_of)))
@@ -2405,11 +2620,14 @@ fail:
   free (km);
   free (wf);
   for (t = 0; t < s->ntracks; t++)
-    for (z = 0; z < GR_NVOICES; z++)
-      {
-        free (v[t][z].n);
-        free (tp[t][z]);
-      }
+    {
+      for (z = 0; z < GR_NVOICES; z++)
+        {
+          free (v[t][z].n);
+          free (tp[t][z]);
+        }
+      free (mk[t]);
+    }
   if (!ok)
     {
       if (!nt->bars)

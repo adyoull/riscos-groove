@@ -7,7 +7,8 @@
 
    Rendering is done in sub-blocks of SUB frames. Sequencer events are
    fired at sub-block starts, so timing jitter is at most SUB/GR_RATE
-   (0.7 ms) - far below what anyone can hear. */
+   (1.5 ms) - far below what anyone can hear. SUB matches the block
+   TinySoundFont works its envelopes and filters in. */
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -16,13 +17,14 @@
 #include "gm_internal.h"
 #include "midisynth.h"
 
-#define SUB          32
+#define SUB          64
 #define NSYNTH       24
 #define NDRUM        16
 #define KS_MAX       2048       /* Karplus-Strong delay: down to ~22 Hz */
 #define LIVE_TRACK   (-2)       /* preview voices aren't on a track */
 #define TWO_PI       6.28318530718f
 #define GM_PENDING   128        /* SoundFont notes waiting for their note-off */
+#define ARP_PENDING  64         /* notes of spread chords waiting to start */
 #define GM_GAIN      4.5f       /* SoundFont level, matched to Groove's sounds */
 
 /* ---------------------------------------------------------------------- */
@@ -186,6 +188,7 @@ struct gr_engine
   uint8_t rec_vel[GR_MAX_TRACKS][128];
   int rec_clip;                 /* audio clip being recorded, or -1 */
   int busy_tail;                /* samples of tail still to render */
+  int audio_on;                 /* any audio regions (set each gr_render) */
   /* Count-in before recording, and merging recordings into regions. */
   int count_beats, count_left, count_pos, merge;
   int count_beat;               /* ticks in one count-in beat */
@@ -195,6 +198,10 @@ struct gr_engine
   int gm_prog[GM_CHANNELS], gm_vol[GM_CHANNELS], gm_pan[GM_CHANNELS];
   struct { int ch, key, left; } gm_off[GM_PENDING];
   int gm_noffs, gm_tail;
+  /* the later notes of spread chords (arpeggios), waiting to start */
+  struct { int track, pitch, vel, frames, left; } arp[ARP_PENDING];
+  int narp;
+  int notes_next;                /* notes start on the next tick */
   float gm_send;                /* the SoundFont's reverb send */
   /* MIDI out: the sender, frames rendered (its clock), what each channel
      was last sent, which channels have been used, and notes waiting for
@@ -236,20 +243,42 @@ static void reverb_init (gr_engine *e)
     }
 }
 
-static inline float comb_run (comb *c, float in)
+/* The reverb runs a block at a time, each delay line in runs that stop
+   where it wraps, so the inner loops have no tests in them. */
+static void comb_block (comb *c, const float *in, float *out, int n)
 {
-  float out = c->buf[c->pos];
-  c->store = out * 0.8f + c->store * 0.2f;          /* damping */
-  c->buf[c->pos] = in + c->store * 0.84f;           /* room size */
-  if (++c->pos >= c->len) c->pos = 0;
-  return out;
+  float store = c->store;
+  while (n > 0)
+    {
+      int m = c->len - c->pos < n ? c->len - c->pos : n, i;
+      float *b = c->buf + c->pos;
+      for (i = 0; i < m; i++)
+        {
+          float o = b[i];
+          store = o * 0.8f + store * 0.2f;              /* damping */
+          b[i] = in[i] + store * 0.84f;                 /* room size */
+          out[i] += o;
+        }
+      in += m; out += m; n -= m;
+      if ((c->pos += m) >= c->len) c->pos = 0;
+    }
+  c->store = store;
 }
-static inline float ap_run (allpass *a, float in)
+static void ap_block (allpass *a, float *io, int n)
 {
-  float b = a->buf[a->pos];
-  a->buf[a->pos] = in + b * 0.5f;
-  if (++a->pos >= a->len) a->pos = 0;
-  return b - in;
+  while (n > 0)
+    {
+      int m = a->len - a->pos < n ? a->len - a->pos : n, i;
+      float *b = a->buf + a->pos;
+      for (i = 0; i < m; i++)
+        {
+          float x = b[i];
+          b[i] = io[i] + x * 0.5f;
+          io[i] = x - io[i];
+        }
+      io += m; n -= m;
+      if ((a->pos += m) >= a->len) a->pos = 0;
+    }
 }
 
 /* ---------------------------------------------------------------------- */
@@ -305,6 +334,7 @@ static void mo_all_off (gr_engine *e);
 static void all_notes_off (gr_engine *e)
 {
   int i;
+  e->narp = 0;
   gm_all_off (e);
   mo_all_off (e);
   for (i = 0; i < NSYNTH; i++)
@@ -785,22 +815,18 @@ static void gm_note_off (gr_engine *e, int track, int pitch)
 /* Mix n frames of the SoundFont into the song. */
 static void gm_render (gr_engine *e, float *l, float *r, float *rv, int n)
 {
-  int16_t buf[2 * SUB];
+  float buf[2 * SUB], send = 0.5f * e->gm_send;
   int i;
-  for (i = 0; i < e->gm_noffs; )
-    if ((e->gm_off[i].left -= n) <= 0)
-      gm_off_now (e, i);
-    else
-      i++;
-  midisynth_render (gm_synth (), buf, n, 0);
+  memset (buf, 0, 2 * n * sizeof *buf);
+  midisynth_render_float (gm_synth (), buf, n);
   if (gm_synth_n (1))
-    midisynth_render (gm_synth_n (1), buf, n, 1);   /* the second synth, added in */
+    midisynth_render_float (gm_synth_n (1), buf, n);   /* the second synth, added in */
   for (i = 0; i < n; i++)
     {
-      float a = buf[2 * i] * (GM_GAIN / 32768.0f), b = buf[2 * i + 1] * (GM_GAIN / 32768.0f);
+      float a = buf[2 * i] * GM_GAIN, b = buf[2 * i + 1] * GM_GAIN;
       l[i] += a;
       r[i] += b;
-      rv[i] += (a + b) * 0.5f * e->gm_send;
+      rv[i] += (a + b) * send;
     }
   e->gm_tail -= n;
 }
@@ -961,16 +987,6 @@ static void mo_note_off (gr_engine *e, int track, int pitch)
 }
 
 /* Note-offs that are due in the n frames just rendered. */
-static void mo_tick (gr_engine *e, int n)
-{
-  int i;
-  for (i = 0; i < e->mo_noffs; )
-    if ((e->mo_off[i].left -= n) <= 0)
-      mo_off_now (e, i);
-    else
-      i++;
-}
-
 static void mo_all_off (gr_engine *e)
 {
   int ch;
@@ -1009,9 +1025,24 @@ unsigned gr_frames (const gr_engine *e) { return e->frames; }
 /* ---------------------------------------------------------------------- */
 /* Transport                                                              */
 
-static double samples_per_tick (const gr_song *s)
+/* At the tempo in force at tick. */
+static double samples_per_tick (const gr_song *s, double tick)
 {
-  return GR_RATE * 60.0 / ((double) s->tempo * GR_PPQ);
+  return GR_RATE * 60.0 / (gr_tempo_at (s, (int) tick) * GR_PPQ);
+}
+
+/* Frames from tick for len ticks, across any tempo changes. */
+static int span_frames (const gr_song *s, int tick, int len)
+{
+  if (!s->ntempos)
+    return (int) (len * samples_per_tick (s, 0));
+  return (int) ((gr_tick_seconds (s, tick + len) - gr_tick_seconds (s, tick)) * GR_RATE);
+}
+
+/* Ticks from tick that frames of sound take up. */
+static int frames_span (const gr_song *s, int tick, int frames)
+{
+  return (int) (gr_seconds_tick (s, gr_tick_seconds (s, tick) + (double) frames / GR_RATE) - tick);
 }
 
 /* Each time the song starts, every MIDI out channel's settings are sent
@@ -1124,7 +1155,7 @@ void gr_record (gr_engine *e)
       e->count_beat = gr_beat_len (s, bar);
       e->count_beats = gr_meter_at (s, bar)->num;
       /* A bar of clicks first; time stands still until it's done. */
-      e->count_left = (int) (e->count_beats * e->count_beat * samples_per_tick (s));
+      e->count_left = (int) (e->count_beats * e->count_beat * samples_per_tick (s, e->pos));
       e->count_pos = 0;
       return;
     }
@@ -1141,7 +1172,7 @@ int gr_counting_in (const gr_engine *e)
   double beat;
   if (e->count_left <= 0)
     return 0;
-  beat = e->count_beat * samples_per_tick (e->song);
+  beat = e->count_beat * samples_per_tick (e->song, e->pos);
   return (int) ((e->count_left + beat - 1) / beat);    /* beats left, rounded up */
 }
 
@@ -1245,7 +1276,7 @@ static void quantize_recorded (gr_engine *e)
         {
           /* Audio: the region is exactly as long as what was recorded. */
           gr_clip *c = &s->clips[r->clip];
-          r->len = (int) (c->frames / samples_per_tick (s)) + 1;
+          r->len = frames_span (s, r->start, c->frames) + 1;
           e->rec_clip = -1;
           continue;
         }
@@ -1282,7 +1313,7 @@ void gr_audio_in (gr_engine *e, const int16_t *stereo, int frames)
     if (e->rec_region[t] >= 0 && s->regions[e->rec_region[t]].clip == e->rec_clip)
       {
         gr_region *r = &s->regions[e->rec_region[t]];
-        int len = (int) (s->clips[e->rec_clip].frames / samples_per_tick (s)) + 1;
+        int len = frames_span (s, r->start, s->clips[e->rec_clip].frames) + 1;
         if (len > r->len)
           r->len = len;
       }
@@ -1454,11 +1485,125 @@ static void chase (gr_engine *e, int tick)
     }
 }
 
+/* The first of a pattern's notes (kept in order of time) at or after a
+   tick: a long pattern, a whole imported part, isn't read from its start
+   on every tick. */
+static int first_note (const gr_pattern *p, int tick)
+{
+  int lo = 0, hi = p->nnotes;
+  while (lo < hi)
+    {
+      int mid = (lo + hi) / 2;
+      if (p->notes[mid].tick < tick)
+        lo = mid + 1;
+      else
+        hi = mid;
+    }
+  return lo;
+}
+
+/* A note starting now, on whatever plays the track: MIDI out, the
+   SoundFont, or Groove's own drums or synth. frames: how long it lasts. */
+static void start_note (gr_engine *e, int track, int pitch, int vel, int frames, int solo)
+{
+  gr_song *s = e->song;
+  const gr_track *tr = &s->tracks[track];
+  if (out_track (e, track))
+    {
+      if (gm_audible (s, track, solo))
+        mo_note_on (e, track, pitch, vel, frames);
+    }
+  else if (gm_track (e, track))
+    {
+      if (gm_audible (s, track, solo))      /* (Groove's voices are muted in the mix instead) */
+        gm_note_on (e, track, pitch, vel, tr->type == TRK_DRUMS ? -1 : frames);
+    }
+  else if (tr->type == TRK_DRUMS)
+    drum_on (e, track, tr->patch, gr_drum_voice (pitch), vel);
+  else
+    synth_on (e, track, tr->patch, pitch, vel, frames);
+}
+
+/* The spread chords' notes whose turn has come (in this sub-block). */
+/* Timed things waiting their turn - spread chords' later notes, and
+   note-offs for the SoundFont and MIDI out - each happen at the start of
+   a sub-block, and a sub-block ends where the next is due, so they're on
+   time to the sample. These: those due now. */
+static void due_now (gr_engine *e)
+{
+  int i, solo = e->narp ? any_solo (e->song) : 0;
+  for (i = 0; i < e->narp;)
+    if (e->arp[i].left <= 0)
+      {
+        if (e->arp[i].track < e->song->ntracks)
+          start_note (e, e->arp[i].track, e->arp[i].pitch, e->arp[i].vel, e->arp[i].frames, solo);
+        e->arp[i] = e->arp[--e->narp];
+      }
+    else
+      i++;
+  for (i = 0; i < e->gm_noffs;)
+    if (e->gm_off[i].left <= 0)
+      gm_off_now (e, i);
+    else
+      i++;
+  for (i = 0; i < e->mo_noffs;)
+    if (e->mo_off[i].left <= 0)
+      mo_off_now (e, i);
+    else
+      i++;
+}
+
+/* Frames until the next of them is due (at most n). */
+static int next_due (const gr_engine *e, int n)
+{
+  int i, most = n;
+  /* (note-offs end at a block's end instead: up to SUB frames late, as
+     good as 0.4.1's and not worth more blocks) */
+  for (i = 0; i < e->narp; i++)
+    if (e->arp[i].left < n) n = e->arp[i].left;
+  if (n < 1)
+    n = 1;
+  return n < most ? n : most;
+}
+
+/* n frames have gone by. */
+static void time_passes (gr_engine *e, int n)
+{
+  int i;
+  for (i = 0; i < e->narp; i++)
+    e->arp[i].left -= n;
+  for (i = 0; i < e->gm_noffs; i++)
+    e->gm_off[i].left -= n;
+  for (i = 0; i < e->mo_noffs; i++)
+    e->mo_off[i].left -= n;
+}
+
+/* Does any note start at tick? (So the sound is made in a block that
+   ends just there, and the note starts on time.) */
+static int notes_at (const gr_engine *e, int tick)
+{
+  const gr_song *s = e->song;
+  int i;
+  for (i = 0; i < GR_MAX_REGIONS; i++)
+    {
+      const gr_region *r = &s->regions[i];
+      const gr_pattern *p;
+      int local, k;
+      if (!r->used || r->clip >= 0 || r->pattern < 0 || tick < r->start || tick >= r->start + r->len)
+        continue;
+      p = &s->patterns[r->pattern];
+      local = (tick - r->start) % p->len;
+      k = first_note (p, local);
+      if (k < p->nnotes && p->notes[k].tick == local)
+        return 1;
+    }
+  return 0;
+}
+
 static void fire_tick (gr_engine *e, int tick)
 {
   gr_song *s = e->song;
   int i, k, solo = any_solo (s);
-  double spt = samples_per_tick (s);
   for (i = 0; i < GR_MAX_REGIONS; i++)
     {
       const gr_region *r = &s->regions[i];
@@ -1477,41 +1622,44 @@ static void fire_tick (gr_engine *e, int tick)
       for (k = 0; k < p->nctls && p->ctls[k].tick <= local; k++)
         if (p->ctls[k].tick == local)
           ctl_fire (e, r->track, p->ctls[k].type, p->ctls[k].value, solo);
-      for (k = 0; k < p->nnotes && p->notes[k].tick <= local; k++)
-        {
-          const gr_note *n = &p->notes[k];
-          if (n->tick != local)
-            continue;
-          if (out_track (e, r->track))
-            {
-              int len = n->len;
-              if (!gm_audible (s, r->track, solo))
-                continue;
-              if (tick + len > r->start + r->len)
-                len = r->start + r->len - tick;
-              mo_note_on (e, r->track, n->pitch, n->vel, (int) (len * spt));
-            }
-          else if (gm_track (e, r->track))
-            {
-              int len = n->len;
-              if (!gm_audible (s, r->track, solo))
-                continue;           /* (Groove's voices are muted in the mix instead) */
-              if (tick + len > r->start + r->len)
-                len = r->start + r->len - tick;
-              gm_note_on (e, r->track, n->pitch, n->vel,
-                          tr->type == TRK_DRUMS ? -1 : (int) (len * spt));
-            }
-          else if (tr->type == TRK_DRUMS)
-            drum_on (e, r->track, tr->patch, gr_drum_voice (n->pitch), n->vel);
-          else
-            {
-              /* Cut the note at the end of the region. */
-              int len = n->len;
-              if (tick + len > r->start + r->len)
-                len = r->start + r->len - tick;
-              synth_on (e, r->track, tr->patch, n->pitch, n->vel, (int) (len * spt));
-            }
-        }
+      {
+        int at[ARP_PENDING], na = 0, a, spread = 0;
+        for (k = first_note (p, local); k < p->nnotes && p->notes[k].tick <= local; k++)
+          if (p->notes[k].tick == local && na < ARP_PENDING)
+            at[na++] = k;
+        /* a spread chord (marked in a score): its notes one after another,
+           from the bottom (or the top), all ending together */
+        if (na > 1 && tr->type != TRK_DRUMS)
+          spread = gr_arpeggio_at (p, local);
+        for (a = 0; a < na; a++)
+          {
+            const gr_note *n = &p->notes[at[a]];
+            int len = n->len, frames, delay;
+            if (tick + len > r->start + r->len)
+              len = r->start + r->len - tick;   /* (cut at the end of the region) */
+            frames = span_frames (s, tick, len);
+            delay = 0;
+            if (spread)
+              {
+                /* (just the chord the mark is on: not the other hand's notes) */
+                int cnt, turn = gr_arpeggio_turn (p, at[a], &cnt);
+                delay = turn * (GR_RATE * GR_ARP_STEP_MS / 1000);
+                if (delay > frames / 2)
+                  delay = turn * (frames / 2 / cnt);   /* (a short chord: spread quicker) */
+              }
+            if (delay > 0 && e->narp < ARP_PENDING)
+              {
+                e->arp[e->narp].track = r->track;
+                e->arp[e->narp].pitch = n->pitch;
+                e->arp[e->narp].vel = n->vel;
+                e->arp[e->narp].frames = frames - delay;
+                e->arp[e->narp].left = delay;
+                e->narp++;
+              }
+            else
+              start_note (e, r->track, n->pitch, n->vel, frames, solo);
+          }
+      }
     }
   if (s->metronome && tick >= 0)
     {
@@ -1551,7 +1699,6 @@ static void preview_tick (gr_engine *e, double spt)
 static void audio_regions (gr_engine *e, float *l, float *r, float *rv, int n, int solo)
 {
   gr_song *s = e->song;
-  double spt = samples_per_tick (s);
   int i, j;
   for (i = 0; i < GR_MAX_REGIONS; i++)
     {
@@ -1570,7 +1717,8 @@ static void audio_regions (gr_engine *e, float *l, float *r, float *rv, int n, i
       c = &s->clips[g->clip];
       if (!c->used || !c->data)
         continue;
-      off = (e->pos - g->start) * spt * c->rate / GR_RATE + g->clip_offset;
+      off = (s->ntempos ? gr_tick_seconds (s, e->pos) - gr_tick_seconds (s, g->start)
+             : (e->pos - g->start) * samples_per_tick (s, 0) / GR_RATE) * c->rate + g->clip_offset;
       pan_gains (tr->vol, tr->pan, &gl, &gr);
       gv = tr->vol * tr->reverb;
       for (j = 0; j < n; j++)
@@ -1594,23 +1742,23 @@ static void audio_regions (gr_engine *e, float *l, float *r, float *rv, int n, i
 /* ---------------------------------------------------------------------- */
 /* The mixer                                                              */
 
-static void render_sub (gr_engine *e, float *l, float *r, int n)
+static int render_sub (gr_engine *e, float *l, float *r, int n)
 {
+  int counting;
   gr_song *s = e->song;
   float tmp[SUB], rv[SUB];
-  int i, j, solo = any_solo (s);
-  double spt = samples_per_tick (s);
+  int i, j, k, solo = any_solo (s);
+  double spt = samples_per_tick (s, e->pos), pv_spt = samples_per_tick (s, 0);
 
   memset (l, 0, n * sizeof *l);
   memset (r, 0, n * sizeof *r);
   memset (rv, 0, sizeof rv);
 
-  if (gm_synth ())
-    gm_sync (e, solo);
   if (e->mo_fn)
     mo_sync (e);
 
   /* The count-in: a click on every beat, time standing still, then play. */
+  counting = e->count_left > 0;
   if (e->count_left > 0)
     {
       double beat = e->count_beat * spt;
@@ -1646,8 +1794,13 @@ static void render_sub (gr_engine *e, float *l, float *r, int n)
         }
       while (e->last_tick < now)
         fire_tick (e, ++e->last_tick);
+      e->notes_next = notes_at (e, e->last_tick + 1);
     }
-  preview_tick (e, spt);
+  preview_tick (e, pv_spt);
+  /* what's due now, and this sub-block ends when the next thing is */
+  due_now (e);
+  if (!counting)
+    n = next_due (e, n);
 
   for (i = 0; i < NSYNTH; i++)
     {
@@ -1707,7 +1860,7 @@ static void render_sub (gr_engine *e, float *l, float *r, int n)
           rv[j] += tmp[j] * gv;
         }
     }
-  if (e->playing)
+  if (e->playing && e->audio_on)
     audio_regions (e, l, r, rv, n, solo);
   if (gm_synth () && e->gm_tail > 0)
     gm_render (e, l, r, rv, n);
@@ -1723,29 +1876,35 @@ static void render_sub (gr_engine *e, float *l, float *r, int n)
       }
 
   /* Reverb send, then master and a soft limiter. */
-  for (j = 0; j < n; j++)
-    {
-      float in = rv[j] * 0.3f, ol = 0.0f, orr = 0.0f, x;
-      int k;
-      for (k = 0; k < 4; k++)
-        {
-          ol += comb_run (&e->cl[k], in);
-          orr += comb_run (&e->cr[k], in);
-        }
-      for (k = 0; k < 2; k++)
-        {
-          ol = ap_run (&e->al[k], ol);
-          orr = ap_run (&e->ar[k], orr);
-        }
-      x = (l[j] + ol) * s->master;
-      l[j] = x > 0.9f ? 0.9f + 0.1f * tanhf ((x - 0.9f) * 10.0f) : x < -0.9f ? -0.9f + 0.1f * tanhf ((x + 0.9f) * 10.0f) : x;
-      x = (r[j] + orr) * s->master;
-      r[j] = x > 0.9f ? 0.9f + 0.1f * tanhf ((x - 0.9f) * 10.0f) : x < -0.9f ? -0.9f + 0.1f * tanhf ((x + 0.9f) * 10.0f) : x;
-    }
+  {
+    float in[SUB], ol[SUB], orr[SUB], m = s->master;
+    for (j = 0; j < n; j++)
+      {
+        in[j] = rv[j] * 0.3f;
+        ol[j] = orr[j] = 0.0f;
+      }
+    for (k = 0; k < 4; k++)
+      {
+        comb_block (&e->cl[k], in, ol, n);
+        comb_block (&e->cr[k], in, orr, n);
+      }
+    for (k = 0; k < 2; k++)
+      {
+        ap_block (&e->al[k], ol, n);
+        ap_block (&e->ar[k], orr, n);
+      }
+    for (j = 0; j < n; j++)
+      {
+        float x = (l[j] + ol[j]) * m;
+        l[j] = x > 0.9f ? 0.9f + 0.1f * tanhf ((x - 0.9f) * 10.0f) : x < -0.9f ? -0.9f + 0.1f * tanhf ((x + 0.9f) * 10.0f) : x;
+        x = (r[j] + orr[j]) * m;
+        r[j] = x > 0.9f ? 0.9f + 0.1f * tanhf ((x - 0.9f) * 10.0f) : x < -0.9f ? -0.9f + 0.1f * tanhf ((x + 0.9f) * 10.0f) : x;
+      }
+  }
 
   /* Advance time. */
   if (e->pv)
-    e->pv_pos += n / spt;
+    e->pv_pos += n / pv_spt;
   if (e->playing)
     {
       e->pos += n / spt;
@@ -1766,9 +1925,9 @@ static void render_sub (gr_engine *e, float *l, float *r, int n)
     }
   if (e->busy_tail > 0)
     e->busy_tail -= n;
-  if (e->mo_noffs)
-    mo_tick (e, n);
+  time_passes (e, n);
   e->frames += (unsigned) n;
+  return n;
 }
 
 void gr_render (gr_engine *e, float *l, float *r, int n)
@@ -1777,18 +1936,40 @@ void gr_render (gr_engine *e, float *l, float *r, int n)
   /* Meters fall at about 20 dB a second, measured per call. */
   for (t = 0; t < e->song->ntracks; t++)
     e->song->tracks[t].meter *= 0.9f;
+  /* Once a call, not for every sub-block: the SoundFont channels brought
+     into line with the tracks, and whether there is any audio to play. */
+  if (gm_synth ())
+    gm_sync (e, any_solo (e->song));
+  e->audio_on = 0;
+  if (e->playing)
+    for (t = 0; t < GR_MAX_REGIONS && !e->audio_on; t++)
+      e->audio_on = e->song->regions[t].used && e->song->regions[t].clip >= 0;
   while (n > 0)
     {
       int k = n < SUB ? n : SUB;
-      render_sub (e, l, r, k);
+      /* Playing: a sub-block ends where the next tick starts, so the notes
+         on it start on time, to the sample, not up to a sub-block late. */
+      if (e->playing && e->count_left <= 0 && e->notes_next)
+        {
+          double spt = samples_per_tick (e->song, e->pos);
+          int until = (int) ceil ((floor (e->pos) + 1.0 - e->pos) * spt);
+          if (until < 1)
+            until = 1;
+          if (until < k)
+            k = until;
+        }
+      k = render_sub (e, l, r, k);       /* (it may stop sooner: something due) */
       l += k; r += k; n -= k;
     }
 }
 
+/* (Clipped as a float, then rounded by hand: lrintf is a library call on
+   RISC OS, and this is done twice a frame.) */
 static inline int32_t to16 (float x)
 {
-  int32_t v = (int32_t) lrintf (x * 32767.0f);
-  return v > 32767 ? 32767 : v < -32768 ? -32768 : v;
+  x *= 32767.0f;
+  x = x > 32767.0f ? 32767.0f : x < -32768.0f ? -32768.0f : x;
+  return (int32_t) (x < 0.0f ? x - 0.5f : x + 0.5f);
 }
 
 void gr_render_words (gr_engine *e, uint32_t *out, int n)
@@ -1819,7 +2000,7 @@ int gr_bounce (gr_song *s, const char *path)
   /* Render to the end of the last region, then two seconds of tail. */
   if (gr_song_end (s) > 0)
     s->bars = gr_tick_bar (s, gr_song_end (s) - 1) + 1;
-  frames = (int) (gr_bar_tick (s, s->bars) * samples_per_tick (s)) + 2 * GR_RATE;
+  frames = (int) (gr_tick_seconds (s, gr_bar_tick (s, s->bars)) * GR_RATE) + 2 * GR_RATE;
   pcm = malloc ((size_t) frames * 2 * sizeof (int16_t));
   if (!pcm)
     {

@@ -25,6 +25,7 @@
 #include "../third_party/stb/stb_vorbis.c"
 #pragma GCC diagnostic pop
 
+int tsf_voices_stolen;              /* (Groove) */
 #define TSF_IMPLEMENTATION
 #include "../third_party/TinySoundFont/tsf.h"
 #define TML_IMPLEMENTATION
@@ -202,6 +203,41 @@ midisynth_create_ex(const midisynth_config *config)
     tsf_set_output(ms->sf, TSF_STEREO_INTERLEAVED, ms->rate, 0.0f);
     tsf_set_volume(ms->sf, MS_BASE_GAIN);
     tsf_set_max_voices(ms->sf, config->max_voices);
+    ms_init_channels(ms);
+    pthread_mutex_init(&ms->lock, NULL);
+    ms_errbuf[0] = 0;
+    return ms;
+}
+
+/* Groove: a second synth playing the same SoundFont, sharing its samples
+   (tsf_copy) rather than loading the file again: quicker, and half the
+   memory. */
+midisynth *
+midisynth_create_copy(midisynth *from, int max_voices)
+{
+    midisynth *ms;
+    if (from == NULL || max_voices < 1 || max_voices > MS_MAX_VOICES) {
+        ms_error(NULL, "Unsupported number of voices", NULL);
+        return NULL;
+    }
+    ms = (midisynth *) calloc(1, sizeof(*ms));
+    if (ms == NULL) {
+        ms_error(NULL, "Out of memory", NULL);
+        return NULL;
+    }
+    pthread_mutex_lock(&from->lock);
+    ms->sf = tsf_copy(from->sf);
+    pthread_mutex_unlock(&from->lock);
+    if (ms->sf == NULL) {
+        ms_error(NULL, "Out of memory", NULL);
+        free(ms);
+        return NULL;
+    }
+    ms->rate = from->rate;
+    ms->volume = 1.0f;
+    tsf_set_output(ms->sf, TSF_STEREO_INTERLEAVED, ms->rate, 0.0f);
+    tsf_set_volume(ms->sf, MS_BASE_GAIN);
+    tsf_set_max_voices(ms->sf, max_voices);
     ms_init_channels(ms);
     pthread_mutex_init(&ms->lock, NULL);
     ms_errbuf[0] = 0;
@@ -413,6 +449,25 @@ midisynth_render(midisynth *ms, int16_t *buffer, int frames, int mix)
     pthread_mutex_unlock(&ms->lock);
 }
 
+/* Groove: the same, as floats (-1..1, stereo interleaved), added into
+   the buffer; it saves a round trip through 16 bits and the clipping that
+   came with it. Only live notes are played this way (no song). */
+void
+midisynth_render_float(midisynth *ms, float *buffer, int frames)
+{
+    pthread_mutex_lock(&ms->lock);
+    if (ms->volume > 0.0f) {
+        while (frames > 0) {
+            int block = frames > TSF_RENDER_EFFECTSAMPLEBLOCK ? TSF_RENDER_EFFECTSAMPLEBLOCK : frames;
+            tsf_render_float(ms->sf, buffer, block, 1);
+            ms_cull(ms);
+            buffer += block * 2;
+            frames -= block;
+        }
+    }
+    pthread_mutex_unlock(&ms->lock);
+}
+
 /* Live MIDI */
 void
 midisynth_note_on(midisynth *ms, int channel, int key, int velocity)
@@ -459,6 +514,26 @@ midisynth_all_notes_off(midisynth *ms)
 {
     pthread_mutex_lock(&ms->lock);
     tsf_note_off_all(ms->sf);
+    pthread_mutex_unlock(&ms->lock);
+}
+
+/* Groove: how many voices are sounding, and end the least missed of them
+   quickly until no more than keep are (for when rendering can't keep up). */
+int
+midisynth_voices(midisynth *ms)
+{
+    int n;
+    pthread_mutex_lock(&ms->lock);
+    n = tsf_active_voice_count(ms->sf);
+    pthread_mutex_unlock(&ms->lock);
+    return n;
+}
+
+void
+midisynth_shed_voices(midisynth *ms, int keep)
+{
+    pthread_mutex_lock(&ms->lock);
+    tsf_shed_voices(ms->sf, keep);
     pthread_mutex_unlock(&ms->lock);
 }
 

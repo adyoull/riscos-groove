@@ -173,16 +173,19 @@ static void w_event (out *o, const gr_notation *nt, const gr_nevent *e, int voic
         w (o, "        <notehead>%s</notehead>\n", head_name[h->head]);
       if (staves > 1)
         w (o, "        <staff>%d</staff>\n", staff);
-      if ((h && (h->tie_stop || h->tie_start)) || (!k && ((e->tuplet & 6) || e->artic || e->slur)))
+      if ((h && (h->tie_stop || h->tie_start)) || (!k && ((e->tuplet & 6) || e->artic || e->slur))
+          || (e->artic & NA_ARPEGGIO))
         {
           w (o, "        <notations>");
           if (!k && (e->slur & NS_STOP))
             w (o, "<slur type=\"stop\" number=\"1\"/>");
           if (!k && (e->slur & NS_START))
             w (o, "<slur type=\"start\" number=\"1\"/>");
-          if (!k && e->artic)
+          if (!k && (e->artic & (NA_ACCENT | NA_STACCATO)))
             w (o, "<articulations>%s%s</articulations>", e->artic & NA_ACCENT ? "<accent/>" : "",
                e->artic & NA_STACCATO ? "<staccato/>" : "");
+          if (e->artic & NA_ARPEGGIO)
+            w (o, e->artic & NA_ARP_DOWN ? "<arpeggiate direction=\"down\"/>" : e->artic & NA_ARP_UP ? "<arpeggiate direction=\"up\"/>" : "<arpeggiate/>");
           if (h && h->tie_stop)
             w (o, "<tied type=\"stop\"/>");
           if (h && h->tie_start)
@@ -389,6 +392,23 @@ int gr_musicxml_export (const gr_song *s, const char *path)
                "          <metronome><beat-unit>quarter</beat-unit><per-minute>%d</per-minute></metronome>\n"
                "        </direction-type>\n        <sound tempo=\"%d\"/>\n      </direction>\n",
                s->tempo, s->tempo);
+          /* tempo changes in the bar, where they are (on the first part) */
+          if (p == 0)
+            {
+              int k, t0 = gr_bar_tick (s, bar->src), t1 = gr_bar_tick (s, bar->src + 1);
+              for (k = 0; k < s->ntempos; k++)
+                if (s->tempos[k].tick >= t0 && s->tempos[k].tick < t1 && s->tempos[k].tick > 0)
+                  {
+                    char bpm[24];
+                    snprintf (bpm, sizeof bpm, "%.2f", (double) s->tempos[k].bpm);
+                    w (&o, "      <direction placement=\"above\">\n        <direction-type>\n"
+                       "          <metronome><beat-unit>quarter</beat-unit><per-minute>%d</per-minute></metronome>\n"
+                       "        </direction-type>\n", (int) (s->tempos[k].bpm + 0.5));
+                    if (s->tempos[k].tick > t0)
+                      w (&o, "        <offset sound=\"yes\">%d</offset>\n", (s->tempos[k].tick - t0) * 5);
+                    w (&o, "        <sound tempo=\"%s\"/>\n      </direction>\n", bpm);
+                  }
+            }
           for (z = 0; z < pp->staves * 2; z++)
             {
               const gr_nrange *r = &pp->voice[b * GR_NVOICES + z];

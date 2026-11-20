@@ -18,8 +18,8 @@
 #include "layout.h"
 
 #define APP_NAME     "Groove"
-#define APP_VERSION  "0.4.1"
-#define APP_DATE     "19-Nov-2026"
+#define APP_VERSION  "0.4.2"
+#define APP_DATE     "20-Nov-2026"
 #define TASK_WORD    0x4B534154
 
 #define FILETYPE_SONG  0xFFF       /* Text, until a type is allocated */
@@ -91,6 +91,7 @@ extern app_state app;
 void startlog_init (void);
 void startlog (const char *fmt, ...);
 void startlog_stage (const char *what);
+int  log_time (void);
 void startlog_fail (const char *step, const _kernel_oserror *e);
 extern const _kernel_oserror *app_create_error;
 unsigned sound_played (void);   /* why a window or icon wasn't made */

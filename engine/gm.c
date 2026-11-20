@@ -59,17 +59,12 @@ void gr_gm_unload (void)
 
 int gr_gm_load_second (void)
 {
-  midisynth_config c;
   midisynth *ms;
   if (!synth)
     return -1;
   if (synth2)
     return 0;
-  midisynth_config_init (&c);
-  c.soundfont = sf_default ? NULL : sf_path;
-  c.sample_rate = GR_RATE;
-  c.max_voices = GM_VOICES / 2;
-  ms = midisynth_create_ex (&c);
+  ms = midisynth_create_copy (synth, GM_VOICES / 2);   /* (the samples shared; it plays up to 11 parts) */
   if (!ms)
     {
       snprintf (error, sizeof error, "%s", midisynth_last_error (NULL));
@@ -92,6 +87,30 @@ int gr_gm_need_second (const gr_song *s)
 int gr_gm_second_ready (void) { return synth2 != NULL; }
 
 const char *gr_gm_error (void) { return error; }
+
+/* The SoundFont voices sounding (in both synths). */
+/* Notes cut off, or not played, for want of a voice, since starting. */
+int gr_gm_stolen (void)
+{
+  extern int tsf_voices_stolen;
+  return tsf_voices_stolen;
+}
+
+int gr_gm_voices (void)
+{
+  return (synth ? midisynth_voices (synth) : 0) + (synth2 ? midisynth_voices (synth2) : 0);
+}
+
+/* When the sound can't be made fast enough: end the voices least missed
+   (dying away, or held only by the pedal) until a fraction (in %) of
+   those sounding are left. */
+void gr_gm_shed (int percent)
+{
+  if (synth)
+    midisynth_shed_voices (synth, midisynth_voices (synth) * percent / 100);
+  if (synth2)
+    midisynth_shed_voices (synth2, midisynth_voices (synth2) * percent / 100);
+}
 
 struct midisynth *gm_synth (void) { return synth; }
 /* (Channels from 32 on, for a 31st instrument track, have no synth: such a

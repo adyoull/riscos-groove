@@ -52,7 +52,7 @@ a { color:#1f5fa8; }
 <h1>Groove User Guide</h1>
 <p>Making music on RISC OS</p>
 <p>Start here if you've never made music on a computer before. If you have, the Technical Stuff boxes and Chapter 19 are for you.</p>
-<span class="badge">Groove 0.4.1</span>
+<span class="badge">Groove 0.4.2</span>
 </div>
 </header>
 <main>
@@ -87,7 +87,7 @@ a { color:#1f5fa8; }
 <p>The pictures are screenshots of Groove running on RISC OS 5.</p>
 
 <h4>This is an early version</h4>
-<p>Groove 0.4.1 is an early version. It's still being tested, so you may come across bugs. If you change something by mistake, <kbd>Ctrl</kbd>+<kbd>Z</kbd> (Undo) takes it back (<a href="#ch3">Chapter 3</a>), but save your song now and then as well (<a href="#ch13">Chapter 13</a>).</p>
+<p>Groove 0.4.2 is an early version. It's still being tested, so you may come across bugs. If you change something by mistake, <kbd>Ctrl</kbd>+<kbd>Z</kbd> (Undo) takes it back (<a href="#ch3">Chapter 3</a>), but save your song now and then as well (<a href="#ch13">Chapter 13</a>).</p>
 
 <h4>What we assume you know</h4>
 <p>Not much. You should know the three mouse buttons (<b>Select</b> on the left, <b>Menu</b> in the middle, <b>Adjust</b> on the right), and how to drag a file from a Filer window into a program. You don't need to know anything about music.</p>
@@ -614,6 +614,9 @@ a { color:#1f5fa8; }
 <figure><img src="images/score-marks.png" alt="Slur, staccato, accent and dynamics"><figcaption>A tune played in: the first bar legato (a slur), the second short (staccato) with one note hit hard (an accent), getting louder from <i>p</i> to <i>f</i>.</figcaption></figure>
 <figure><img src="images/score-hairpins.png" alt="Hairpins and pedal marks"><figcaption>Getting louder, then softer, with the sustain pedal held a bar at a time.</figcaption></figure>
 <p>All of these go into an exported MusicXML file as well, so MuseScore shows them too; and a score's pedal marks come into Groove as the sustain pedal.</p>
+<p><b>A score you've opened</b> (MuseScore or MusicXML) keeps its own marks: its dynamics, hairpins, slurs, staccato dots, accents, 8va and 15ma lines and spread chords (arpeggios, a wavy line before the chord, played spread as MuseScore plays them: a note at a time from the bottom, quickly) are written where the score has them, rather than worked out from the playing. They're kept with the notes (in the song file too), and go out again in exported MusicXML. A part played in, or from a MIDI file, is still worked out from how it's played.</p>
+<p><b>Tempo changes.</b> A score's (or MIDI file's) changes of tempo come in with it: the music slows down and speeds up where it says, and the Score window shows each new tempo (&#x2669; = 60) over the bar it changes in (in bars of rest too: a multi-bar rest is broken where the tempo changes). The tempo on the toolbar is the one it starts at: change it and every later tempo changes in proportion, so a piece can be slowed down to practise and still slow down where it should.</p>
+<figure><img src="images/score-filemarks.png" alt="A score's own marks"><figcaption>A score's own marks: a slur, a crescendo from <i>p</i>, a spread chord at <i>f</i>, staccato and an accent, then a new tempo and an 8va line.</figcaption></figure>
 <p><b>The full score.</b> Press <kbd>Menu</kbd> over the Score window for its own menu. <b>Full score</b> shows every track at once, the way a conductor reads it: a staff per part (two, joined by a brace, for a piano), each named on the left, with the bars lined up down the page. Choose it again to go back to just the selected track; the window's title says which you're looking at.</p>
 <figure><img src="images/score-full.png" alt="A full score"><figcaption>A clarinet, guitar and viola as a full score. The clarinet is written a tone up, in D, as a B flat clarinettist reads it; the guitar is on the treble clef with an 8 under it. The last two bars are empty, so each part has one bar of rest with a 2 over it.</figcaption></figure>
 <ul>

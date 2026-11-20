@@ -148,3 +148,31 @@ int gr_place_ctls (gr_song *s, int t, const gr_pctl *c, int n, int from, int *fu
     }
   return 0;
 }
+
+void gr_place_marks (gr_song *s, int t, const gr_pmark *m, int n, int from, int *dropped)
+{
+  int k, i;
+  for (k = 0; k < n; k++)
+    {
+      int at = from + m[k].tick;
+      for (i = 0; i < GR_MAX_REGIONS; i++)
+        {
+          const gr_region *g = &s->regions[i];
+          if (g->used && g->track == t && g->clip < 0 && g->pattern >= 0
+              && at >= g->start && at < g->start + g->len)
+            {
+              gr_pattern *p = &s->patterns[g->pattern];
+              gr_mark mk;
+              mk.tick = (int16_t) ((at - g->start) % p->len);
+              mk.len = (int16_t) (m[k].len < 0 ? 0 : m[k].len > 32767 ? 32767 : m[k].len);
+              mk.kind = (uint8_t) m[k].kind;
+              mk.value = (int8_t) m[k].value;
+              mk.pitch = (uint8_t) m[k].pitch;
+              mk.staff = (uint8_t) m[k].staff;
+              if (gr_pattern_add_mark (p, &mk) < 0)
+                (*dropped)++;
+              break;
+            }
+        }
+    }
+}

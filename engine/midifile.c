@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 #include "groove.h"
 #include "place.h"
 #include "score.h"
@@ -105,6 +106,9 @@ static void key_off (mchan *c, int key, long tick)
 /* Time signatures found (file ticks), for an import into an empty song. */
 static struct { long tick; int num, den; } ts[GR_MAX_METERS];
 static int nts;
+/* And the tempo changes. */
+static struct { long tick, us; } tps[GR_MAX_TEMPOS];
+static int ntps;
 
 /* One MTrk chunk. Times stay in the file's ticks. */
 static int read_track (rd *r, mchan *ch, long *tempo, long *last)
@@ -135,8 +139,18 @@ static int read_track (rd *r, mchan *ch, long *tempo, long *last)
           type = *r->p++;
           if (vlq (r, &len) || len > (unsigned long) (r->end - r->p))
             return -1;
-          if (type == 0x51 && len == 3 && *tempo == 0)
-            *tempo = ((long) r->p[0] << 16) | (r->p[1] << 8) | r->p[2];
+          if (type == 0x51 && len == 3)
+            {
+              long us = ((long) r->p[0] << 16) | (r->p[1] << 8) | r->p[2];
+              if (*tempo == 0)
+                *tempo = us;
+              if (ntps < GR_MAX_TEMPOS && us > 0)
+                {
+                  tps[ntps].tick = tick;
+                  tps[ntps].us = us;
+                  ntps++;
+                }
+            }
           if (type == 0x58 && len >= 2 && nts < GR_MAX_METERS && r->p[1] <= 6)
             {
               ts[nts].tick = tick;
@@ -286,7 +300,7 @@ int gr_midi_import (gr_song *s, const char *path, int from, const char **why)
     }
   for (c = 0; c < 16; c++)
     ch[c].program = ch[c].bank_msb = ch[c].bank_lsb = -1;
-  nts = 0;
+  nts = ntps = 0;
   r.p = data + 8 + be32 (data + 4);
   r.end = data + size;
   for (i = 0; i < ntrk && r.end - r.p >= 8; i++)
@@ -336,8 +350,30 @@ int gr_midi_import (gr_song *s, const char *path, int from, const char **why)
     }
   if (empty && tempo > 0)
     {
-      long bpm = (60000000L + tempo / 2) / tempo;
-      s->tempo = bpm < 40 ? 40 : bpm > 240 ? 240 : (int) bpm;
+      int a, z;
+      /* the first tempo, then its changes in order */
+      for (a = 1; a < ntps; a++)
+        for (z = a; z > 0 && tps[z].tick < tps[z - 1].tick; z--)
+          {
+            long tt = tps[z].tick, uu = tps[z].us;
+            tps[z] = tps[z - 1];
+            tps[z - 1].tick = tt;
+            tps[z - 1].us = uu;
+          }
+      if (ntps && tps[0].tick == 0)
+        tempo = tps[0].us;
+      {
+        long bpm = (60000000L + tempo / 2) / tempo;
+        s->tempo = bpm < 40 ? 40 : bpm > 240 ? 240 : (int) bpm;
+      }
+      s->ntempos = 0;
+      for (a = 0; a < ntps; a++)
+        {
+          int tk = from + (int) ((long long) tps[a].tick * GR_PPQ / division);
+          double bpm = 60000000.0 / tps[a].us;
+          if (tk > from && fabs (gr_tempo_at (s, tk) - bpm) > 0.01)
+            gr_tempo_add (s, tk, bpm);
+        }
     }
   /* Into a song with no music yet, the parts replace its empty tracks
      (a new song's Drums and Electric Piano), so a 16-part file fits. */
@@ -490,7 +526,7 @@ int gr_midi_export (const gr_song *s, const char *path)
     /* The tempo track: tempo, the time signatures where they change, end. */
     const unsigned char tr[] = { 0, 0xFF, 0x51, 3, (unsigned char) (us >> 16), (unsigned char) (us >> 8),
                                  (unsigned char) us };
-    int m, now = 0;
+    int m, now = 0, k = 0;
     b.n = 0;
     rc |= put (&b, tr, sizeof tr);
     for (m = 0; m < s->nmeters || m == 0; m++)
@@ -498,6 +534,15 @@ int gr_midi_export (const gr_song *s, const char *path)
         const gr_meter *mt = s->nmeters ? &s->meters[m] : gr_meter_at (s, 0);
         int at = gr_bar_tick (s, mt->bar), dd = 0;
         unsigned char ev[7];
+        /* the tempo changes before it */
+        for (; k < s->ntempos && s->tempos[k].tick < at; k++)
+          {
+            unsigned long u = (unsigned long) (60000000.0 / s->tempos[k].bpm + 0.5);
+            unsigned char te[6] = { 0xFF, 0x51, 3, (unsigned char) (u >> 16), (unsigned char) (u >> 8), (unsigned char) u };
+            rc |= put_vlq (&b, (unsigned long) (s->tempos[k].tick - now));
+            rc |= put (&b, te, 6);
+            now = s->tempos[k].tick;
+          }
         while ((1 << dd) < mt->den)
           dd++;
         ev[0] = 0xFF; ev[1] = 0x58; ev[2] = 4;
@@ -507,6 +552,14 @@ int gr_midi_export (const gr_song *s, const char *path)
         rc |= put_vlq (&b, (unsigned long) (at - now));
         rc |= put (&b, ev, 7);
         now = at;
+      }
+    for (; k < s->ntempos; k++)
+      {
+        unsigned long u = (unsigned long) (60000000.0 / s->tempos[k].bpm + 0.5);
+        unsigned char te[6] = { 0xFF, 0x51, 3, (unsigned char) (u >> 16), (unsigned char) (u >> 8), (unsigned char) u };
+        rc |= put_vlq (&b, (unsigned long) (s->tempos[k].tick - now));
+        rc |= put (&b, te, 6);
+        now = s->tempos[k].tick;
       }
     {
       const unsigned char end[] = { 0, 0xFF, 0x2F, 0 };
@@ -545,6 +598,19 @@ int gr_midi_export (const gr_song *s, const char *path)
                   off = on + (drums ? GR_STEP / 2 : n->len);
                   if (off > r->start + r->len)
                     off = r->start + r->len;
+                  /* a spread chord (an arpeggio in a score): its notes start
+                     one after another, as Groove plays them, and end together */
+                  if (!drums && p->nmarks)
+                    {
+                      int cnt, turn = gr_arpeggio_turn (p, k, &cnt);
+                      if (turn)
+                        {
+                          int d = (int) (turn * GR_ARP_STEP_MS / 1000.0 * gr_tempo_at (s, on) * GR_PPQ / 60.0 + 0.5);
+                          if (d > (off - on) / 2)
+                            d = turn * ((off - on) / 2 / cnt);
+                          on += d;
+                        }
+                    }
                   if (nev + 2 > cap)
                     {
                       mev *m;

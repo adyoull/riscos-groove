@@ -43,14 +43,16 @@ can also use a SoundFont's 128 General MIDI instruments and drum kits.
 - **Files**: songs, WAV import and export, MIDI import and export (with
   channels, banks, program changes and controllers).
 - **MuseScore and MusicXML**: open MuseScore scores (.mscz, .mscx) and
-  MusicXML (.musicxml, .mxl), with their repeats, ties and tuplets, and
+  MusicXML (.musicxml, .mxl), with their repeats, ties, tuplets, tempo
+  changes and marks (dynamics, hairpins, slurs, staccato, accents, 8va
+  lines, arpeggios), and
   write songs out as MusicXML that MuseScore, Sibelius, Dorico and Finale
   open.
 - **The Score window**: any track, or the whole song as a full score,
   written out as music and lit bar by bar as it plays: note values that
   respect the beat, ties, tuplets, two staves for piano, dynamics,
-  hairpins, accents, staccato, slurs and pedal marks from how the notes
-  were played; transposing instruments written for their players (or at
+  hairpins, accents, staccato, slurs and pedal marks as an imported
+  score has them, or from how the notes were played; tempo changes; transposing instruments written for their players (or at
   concert pitch); clefs, key signatures and their changes, 8va and 15ma
   lines, multi-bar rests, and repeats with first and second endings.
 - **Printing**: the score, or each player's part, on any printer

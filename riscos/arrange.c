@@ -216,8 +216,8 @@ void arrange_new_song (void)
    the playhead shows the engine position less that latency. */
 static double heard_position (void)
 {
-  double spt = GR_RATE * 60.0 / ((double) app.song.tempo * GR_PPQ);
   double pos = gr_position (app.eng);
+  double spt = GR_RATE * 60.0 / (gr_tempo_at (&app.song, (int) pos) * GR_PPQ);
   if (gr_playing (app.eng))
     pos -= sound_latency () / spt;
   return pos < 0 ? 0 : pos;
@@ -324,7 +324,7 @@ static void draw_region_content (int ox, int x0, int y0, int x1, int y1,
   if (r->clip >= 0)
     {
       const gr_clip *c = &app.song.clips[r->clip];
-      double spt = GR_RATE * 60.0 / ((double) app.song.tempo * GR_PPQ);
+      double spt = GR_RATE * 60.0 / (gr_tempo_at (&app.song, r->start) * GR_PPQ);
       double frames_per_tick = spt * c->rate / GR_RATE;
       int x, mid = (y0 + y1) / 2, half = (y1 - y0) / 2 - 2;
       if (!c->used || !c->data)
@@ -742,6 +742,7 @@ static void play_stop (void)
       browser_stop_preview ();
       app.underruns_at_play = sound_underruns ();
       gr_play (app.eng);
+      startlog ("play");
     }
   transport_changed ();
 }
@@ -832,12 +833,12 @@ void arrange_tool_click (int *b)
     case TB_TEMPO_DOWN: case TB_TEMPO_UP: case TB_TEMPO:
       {
         /* Select steps by 1, Adjust by 10 (the RISC OS way to go faster). */
-        int step = b[2] == BUT_ADJUST ? 10 : 1;
-        if (i == TB_TEMPO_DOWN) app.song.tempo -= step;
-        else if (i == TB_TEMPO_UP) app.song.tempo += step;
-        else app.song.tempo += b[2] == BUT_ADJUST ? -5 : 5;
-        if (app.song.tempo < 40) app.song.tempo = 40;
-        if (app.song.tempo > 240) app.song.tempo = 240;
+        /* (Any tempo changes later in the song go with it, in proportion.) */
+        int step = b[2] == BUT_ADJUST ? 10 : 1, bpm = app.song.tempo;
+        if (i == TB_TEMPO_DOWN) bpm -= step;
+        else if (i == TB_TEMPO_UP) bpm += step;
+        else bpm += b[2] == BUT_ADJUST ? -5 : 5;
+        gr_tempo_base (&app.song, bpm);
         app.unsaved = 1;
         redraw_tool_button (TB_TEMPO);
         if (app.edit_open) app_redraw_all (app.w_edit);
@@ -1072,7 +1073,7 @@ static void drag_resize (int x, int y, int done)
   /* Audio regions can't be longer than their recording. */
   if (r->clip >= 0)
     {
-      double spt = GR_RATE * 60.0 / ((double) app.song.tempo * GR_PPQ);
+      double spt = GR_RATE * 60.0 / (gr_tempo_at (&app.song, r->start) * GR_PPQ);
       int max = (int) ((app.song.clips[r->clip].frames - r->clip_offset) / spt) + 1;
       if (len > max) len = max;
     }
@@ -1330,7 +1331,14 @@ void arrange_drop_file (const char *path, int type, int x, int y)
   h = lay_arranger_hit (&app.view, &app.song, wx > HDR_W ? wx : HDR_W, wy);
   if (type == FILETYPE_MIDI || type == FILETYPE_MAESTRO || type == FILETYPE_SCORE)
     {
-      arrange_import (path, type, gr_bar_snap (&app.song, h.tick < 0 ? 0 : h.tick));
+      /* Into an empty song a piece starts at bar 1, wherever it's dropped
+         (dropped halfway across the window, a score used to begin after
+         bars of silence); into a song with music in it, at the bar it's
+         dropped on. */
+      int i, empty = 1;
+      for (i = 0; i < GR_MAX_REGIONS && empty; i++)
+        empty = !app.song.regions[i].used;
+      arrange_import (path, type, empty ? 0 : gr_bar_snap (&app.song, h.tick < 0 ? 0 : h.tick));
       return;
     }
   r = gr_wav_import (&app.song, path, h.track, h.tick < 0 ? 0 : h.tick);
@@ -1369,7 +1377,8 @@ static int read_voices (const char *names[], int max)
 void arrange_import (const char *path, int type, int tick)
 {
   const char *why, *voices[32];
-  int first = app.song.ntracks, n;
+  int first = app.song.ntracks, n, t0 = log_time ();
+  startlog ("import %s (type &%X) at tick %d", path, type, tick);
   _swix (Hourglass_On, 0);
   if (type == FILETYPE_MAESTRO)
     {
@@ -1381,6 +1390,7 @@ void arrange_import (const char *path, int type, int tick)
   else
     n = gr_midi_import (&app.song, path, tick, &why);
   _swix (Hourglass_Off, 0);
+  startlog ("import: %d parts, %d tracks, %d cs", n, app.song.ntracks, log_time () - t0);
   if (n < 0)
     {
       app_error (why ? why : type == FILETYPE_MAESTRO ? "Groove couldn't import that Maestro file."
@@ -1396,6 +1406,7 @@ void arrange_import (const char *path, int type, int tick)
     app_error (why);
   if (gr_song_uses_gm (&app.song))
     app_gm_ensure ();
+  startlog ("import: done, %d cs", log_time () - t0);
 }
 
 /* ---- on null events ------------------------------------------------------------ */

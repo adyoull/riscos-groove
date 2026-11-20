@@ -186,6 +186,11 @@ TSFDEF void tsf_note_off_all(tsf* f);
 // Returns the number of active voices
 TSFDEF int tsf_active_voice_count(tsf* f);
 
+// Groove: end voices quickly until no more than keep are left sounding: those
+// furthest into their release first, then those held only by the sustain
+// pedal (the oldest first), then the oldest. For when rendering can't keep up.
+TSFDEF void tsf_shed_voices(tsf* f, int keep);
+
 // Render output samples into a buffer
 // You can either render as signed 16-bit values (tsf_render_short) or
 // as 32-bit float values (tsf_render_float)
@@ -310,6 +315,9 @@ TSFDEF float tsf_channel_get_tuning(tsf* f, int channel);
 #define TSF_TRUE 1
 #define TSF_FALSE 0
 #define TSF_BOOL unsigned char
+#define TSF_UINT64 unsigned long long
+/* Groove: notes cut off (or not played) for want of a voice. */
+extern int tsf_voices_stolen;
 #define TSF_PI 3.14159265358979323846264338327950288
 #define TSF_NULL 0
 
@@ -1287,6 +1295,35 @@ static void tsf_voice_render(tsf* f, struct tsf_voice* v, float* outputBuffer, i
 		{
 			case TSF_STEREO_INTERLEAVED:
 				gainLeft = gainMono * v->panFactorLeft, gainRight = gainMono * v->panFactorRight;
+				if (tmpSourceSamplePosition < tmpSampleEndDbl && tmpSampleEndDbl < 4294967295.0 && pitchRatio > 0.0 && pitchRatio < 65536.0)
+				{
+					/* Groove: the position in 32.32 fixed point, the same steps as
+					   the double below without converting it twice a sample (dear
+					   on ARM), and each case of the loop without the tests the
+					   others need. */
+					TSF_UINT64 p = (TSF_UINT64)(tmpSourceSamplePosition * 4294967296.0);
+					TSF_UINT64 step = (TSF_UINT64)(pitchRatio * 4294967296.0);
+					TSF_UINT64 loopEndP = ((TSF_UINT64)tmpLoopEnd + 1) << 32, loopLenP = ((TSF_UINT64)(tmpLoopEnd - tmpLoopStart) + 1) << 32;
+					unsigned int end = region->end;
+					const float scale = 1.0f / 4294967296.0f;
+					while (blockSamples-- > 0)
+					{
+						unsigned int pos = (unsigned int)(p >> 32), nextPos;
+						float alpha, val;
+						if (pos >= end) break;
+						nextPos = (pos >= tmpLoopEnd && isLooping ? tmpLoopStart : pos + 1);
+						alpha = (float)(unsigned int)p * scale;
+						val = input[pos] + (input[nextPos] - input[pos]) * alpha;
+						if (tmpLowpass.active) val = tsf_voice_lowpass_process(&tmpLowpass, val);
+						outL[0] += val * gainLeft;
+						outL[1] += val * gainRight;
+						outL += 2;
+						p += step;
+						if (isLooping && p >= loopEndP) p -= loopLenP;
+					}
+					tmpSourceSamplePosition = (double)(p >> 32) + (double)(unsigned int)p * (1.0 / 4294967296.0);
+					break;
+				}
 				while (blockSamples-- && tmpSourceSamplePosition < tmpSampleEndDbl)
 				{
 					unsigned int pos = (unsigned int)tmpSourceSamplePosition, nextPos = (pos >= tmpLoopEnd && isLooping ? tmpLoopStart : pos + 1);
@@ -1595,7 +1632,23 @@ TSFDEF int tsf_note_on(tsf* f, int preset_index, int key, float vel)
 					}
 				}
 				if (!voice)
+				{
+					// (Groove: none releasing, so rather than drop the new note take the
+					// oldest voice held only by the sustain pedal, else the oldest)
+					unsigned int oldest = 0xFFFFFFFF;
+					for (v = f->voices; v != vEnd; v++)
+						if (v->playingPreset != -1 && v->heldSustain && v->playIndex < oldest) { oldest = v->playIndex; voice = v; }
+					if (!voice)
+						for (v = f->voices; v != vEnd; v++)
+							if (v->playingPreset != -1 && v->playIndex < oldest && v->playIndex != voicePlayIndex) { oldest = v->playIndex; voice = v; }
+				}
+				if (!voice)
+				{
+					tsf_voices_stolen++;    /* (Groove: counted for its log) */
 					continue;
+				}
+				if (voice->ampenv.segment != TSF_SEGMENT_RELEASE)
+					tsf_voices_stolen++;    /* (a note still sounding cut off) */
 				tsf_voice_kill(voice);
 			}
 			else
@@ -1697,6 +1750,29 @@ TSFDEF void tsf_note_off_all(tsf* f)
 	struct tsf_voice *v = f->voices, *vEnd = v + f->voiceNum;
 	for (; v != vEnd; v++) if (v->playingPreset != -1 && v->ampenv.segment < TSF_SEGMENT_RELEASE)
 		tsf_voice_end(f, v);
+}
+
+TSFDEF void tsf_shed_voices(tsf* f, int keep)
+{
+	struct tsf_voice *v, *vEnd = f->voices + f->voiceNum;
+	int count = 0;
+	for (v = f->voices; v != vEnd; v++)
+		if (v->playingPreset != -1 && !(v->ampenv.segment == TSF_SEGMENT_RELEASE && v->ampenv.parameters.release == 0.0f)) count++;
+	while (count > keep)
+	{
+		struct tsf_voice *best = TSF_NULL;
+		int bestRank = -1; unsigned int bestIndex = 0;
+		for (v = f->voices; v != vEnd; v++)
+		{
+			int rank;
+			if (v->playingPreset == -1 || (v->ampenv.segment == TSF_SEGMENT_RELEASE && v->ampenv.parameters.release == 0.0f)) continue;
+			rank = v->ampenv.segment == TSF_SEGMENT_RELEASE ? 2 : v->heldSustain ? 1 : 0;
+			if (rank > bestRank || (rank == bestRank && v->playIndex < bestIndex)) { best = v; bestRank = rank; bestIndex = v->playIndex; }
+		}
+		if (!best) break;
+		tsf_voice_endquick(f, best);
+		count--;
+	}
 }
 
 TSFDEF int tsf_active_voice_count(tsf* f)
@@ -1936,6 +2012,21 @@ TSFDEF int tsf_channel_note_on(tsf* f, int channel, int key, float vel)
 	{
 		tsf_channel_note_off(f, channel, key);
 		return 1;
+	}
+	if (f->channels->channels[channel].sustain)
+	{
+		// (Groove: a key struck again while the pedal holds it: the note it was
+		// still sounding is let go, as a piano's string is damped and struck
+		// again, rather than piling up voices)
+		struct tsf_voice *v = f->voices, *vEnd = v + f->voiceNum;
+		for (; v != vEnd; v++)
+			if (v->playingPreset != -1 && v->playingChannel == channel && v->playingKey == key && v->heldSustain
+			    && v->ampenv.segment < TSF_SEGMENT_RELEASE)
+			{
+				// (quickly, but not so quickly that it clicks)
+				if (v->ampenv.parameters.release > 0.1f) v->ampenv.parameters.release = 0.1f;
+				tsf_voice_end(f, v);
+			}
 	}
 	return tsf_note_on(f, f->channels->channels[channel].presetIndex, key, vel);
 }

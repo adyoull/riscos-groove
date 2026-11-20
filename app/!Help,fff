@@ -1,4 +1,4 @@
-Groove 0.4.1 for RISC OS
+Groove 0.4.2 for RISC OS
 ==============================
 
 A music studio: drag loops into a song, play instruments
@@ -123,8 +123,10 @@ MuseScore and MusicXML
   Groove reads MuseScore files (.mscz, .mscx; MuseScore 2 to 4) and
   MusicXML (.musicxml, .xml, .mxl), whatever their filetype: files from a
   PC or a USB stick are often Data. Repeats and endings are played out,
-  ties joined; tuplets, dynamics, transposing instruments and 8va lines
-  are kept. Grace notes, ornaments, D.C./D.S. and lyrics aren't.
+  ties joined; tuplets, transposing instruments and tempo changes are
+  kept, and the score's own marks (dynamics, hairpins, slurs, staccato,
+  accents, 8va lines, arpeggios) are written as it has them. Grace
+  notes, ornaments, D.C./D.S. and lyrics aren't.
   Song > Export as MusicXML writes the song for MuseScore (and Sibelius,
   Dorico, Finale): note values, ties, triplets, two staves and a second
   voice where they're needed, a key signature worked out from the notes,
@@ -136,7 +138,8 @@ Score window
   window follows it if Follow playhead is on. Click a bar to move the
   playhead there; + and - change the size. It's for reading: edit notes
   in the Editor.
-  How it's played is marked from the notes: dynamics (pp to ff) from
+  A part played in (or from a MIDI file) is marked from the notes:
+  dynamics (pp to ff) from
   their velocities, accents on notes hit hard, staccato for notes let go
   early, slurs over notes played legato; drums in two voices (hands
   stems up, feet stems down); hairpins where the playing gets steadily

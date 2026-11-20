@@ -34,6 +34,7 @@ GLYPHS = [  # (C name, SMuFL code point)
     ("G_CLEF_SMALL", 0xE07A), ("C_CLEF_SMALL", 0xE07B), ("F_CLEF_SMALL", 0xE07C),
     ("OTTAVA_8VA", 0xE511), ("OTTAVA_8VB", 0xE51C),
     ("QUINDICESIMA_A", 0xE515), ("QUINDICESIMA_B", 0xE517),
+    ("ARPEGGIATO", 0xE63C), ("ARROWHEAD_UP", 0xEB78), ("ARROWHEAD_DOWN", 0xEB7C),
 ]
 
 def main(path, out):

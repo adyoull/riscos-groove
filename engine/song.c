@@ -26,6 +26,92 @@ void gr_song_init (gr_song *s)
   s->meters[0].den = 4;
 }
 
+/* ---- tempo ---------------------------------------------------------------- */
+
+double gr_tempo_at (const gr_song *s, int tick)
+{
+  int i;
+  for (i = s->ntempos - 1; i >= 0; i--)
+    if (s->tempos[i].tick <= tick)
+      return s->tempos[i].bpm;
+  return s->tempo > 0 ? s->tempo : 120;
+}
+
+/* Seconds a tick lasts at a tempo. */
+static double tick_secs (double bpm) { return 60.0 / (bpm * GR_PPQ); }
+
+double gr_tick_seconds (const gr_song *s, double tick)
+{
+  double t = 0.0, at = 0.0, bpm = s->tempo > 0 ? s->tempo : 120;
+  int i;
+  for (i = 0; i < s->ntempos && s->tempos[i].tick < tick; i++)
+    {
+      if (s->tempos[i].tick > at)
+        {
+          t += (s->tempos[i].tick - at) * tick_secs (bpm);
+          at = s->tempos[i].tick;
+        }
+      bpm = s->tempos[i].bpm;
+    }
+  return t + (tick - at) * tick_secs (bpm);
+}
+
+double gr_seconds_tick (const gr_song *s, double secs)
+{
+  double t = 0.0, at = 0.0, bpm = s->tempo > 0 ? s->tempo : 120;
+  int i;
+  for (i = 0; i < s->ntempos; i++)
+    {
+      double d = (s->tempos[i].tick - at) * tick_secs (bpm);
+      if (s->tempos[i].tick > at)
+        {
+          if (t + d > secs)
+            break;
+          t += d;
+          at = s->tempos[i].tick;
+        }
+      bpm = s->tempos[i].bpm;
+    }
+  return at + (secs - t) / tick_secs (bpm);
+}
+
+int gr_tempo_add (gr_song *s, int tick, double bpm)
+{
+  int i;
+  if (bpm < 10.0) bpm = 10.0;
+  if (bpm > 400.0) bpm = 400.0;
+  if (tick <= 0)
+    {
+      s->tempo = (int) (bpm + 0.5);
+      return 0;
+    }
+  for (i = 0; i < s->ntempos && s->tempos[i].tick < tick; i++)
+    ;
+  if (i < s->ntempos && s->tempos[i].tick == tick)
+    {
+      s->tempos[i].bpm = (float) bpm;
+      return 0;
+    }
+  if (s->ntempos >= GR_MAX_TEMPOS)
+    return -1;
+  memmove (&s->tempos[i + 1], &s->tempos[i], (size_t) (s->ntempos - i) * sizeof s->tempos[0]);
+  s->tempos[i].tick = tick;
+  s->tempos[i].bpm = (float) bpm;
+  s->ntempos++;
+  return 0;
+}
+
+void gr_tempo_base (gr_song *s, int bpm)
+{
+  int i;
+  if (bpm < 40) bpm = 40;
+  if (bpm > 240) bpm = 240;
+  if (s->tempo > 0)
+    for (i = 0; i < s->ntempos; i++)
+      s->tempos[i].bpm = s->tempos[i].bpm * bpm / s->tempo;
+  s->tempo = bpm;
+}
+
 /* ---- time signatures ---------------------------------------------------- */
 
 static int meter_bar_len (const gr_meter *m) { return m->num * (4 * GR_PPQ) / m->den; }
@@ -297,6 +383,69 @@ int gr_pattern_set_ctl (gr_pattern *p, int tick, int type, int value)
   return i;
 }
 
+int gr_pattern_add_mark (gr_pattern *p, const gr_mark *m)
+{
+  int i;
+  if (m->tick < 0 || m->tick >= p->len || p->nmarks >= GR_MAX_MARKS)
+    return -1;
+  for (i = p->nmarks; i > 0 && p->marks[i - 1].tick > m->tick; i--)
+    p->marks[i] = p->marks[i - 1];
+  p->marks[i] = *m;
+  p->nmarks++;
+  return i;
+}
+
+const gr_mark *gr_arpeggio_mark (const gr_pattern *p, int tick)
+{
+  int lo = 0, hi = p->nmarks;
+  while (lo < hi)
+    {
+      int mid = (lo + hi) / 2;
+      if (p->marks[mid].tick < tick)
+        lo = mid + 1;
+      else
+        hi = mid;
+    }
+  for (; lo < p->nmarks && p->marks[lo].tick == tick; lo++)
+    if (p->marks[lo].kind == GR_MK_ARPEGGIO)
+      return &p->marks[lo];
+  return NULL;
+}
+
+int gr_arpeggio_at (const gr_pattern *p, int tick)
+{
+  const gr_mark *m = gr_arpeggio_mark (p, tick);
+  return !m ? 0 : m->value < 0 ? -1 : 1;
+}
+
+int gr_arpeggio_has (const gr_mark *m, int pitch)
+{
+  return m && (m->len <= 0 || (pitch >= m->pitch && pitch <= m->len));
+}
+
+int gr_arpeggio_turn (const gr_pattern *p, int k, int *count)
+{
+  const gr_mark *m = gr_arpeggio_mark (p, p->notes[k].tick);
+  int dir = !m ? 0 : m->value < 0 ? -1 : 1, i, turn = 0, n = 0;
+  if (count)
+    *count = 0;
+  if (!dir || !gr_arpeggio_has (m, p->notes[k].pitch))
+    return 0;
+  for (i = 0; i < p->nnotes; i++)
+    if (p->notes[i].tick == p->notes[k].tick && gr_arpeggio_has (m, p->notes[i].pitch))
+      {
+        n++;
+        if (i != k && (dir > 0 ? p->notes[i].pitch < p->notes[k].pitch
+                       || (p->notes[i].pitch == p->notes[k].pitch && i < k)
+                       : p->notes[i].pitch > p->notes[k].pitch
+                       || (p->notes[i].pitch == p->notes[k].pitch && i < k)))
+          turn++;
+      }
+  if (count)
+    *count = n;
+  return n > 1 ? turn : 0;
+}
+
 void gr_pattern_delete_ctl (gr_pattern *p, int index)
 {
   if (index < 0 || index >= p->nctls)
@@ -444,10 +593,9 @@ int gr_region_split (gr_song *s, int region, int tick)
   off = tick - r->start;
   if (r->clip >= 0)
     {
-      double spt = GR_RATE * 60.0 / ((double) s->tempo * GR_PPQ);
+      double secs = gr_tick_seconds (s, tick) - gr_tick_seconds (s, r->start);
       nr->clip = r->clip;
-      nr->clip_offset = r->clip_offset
-                        + (int) (off * spt * s->clips[r->clip].rate / GR_RATE + 0.5);
+      nr->clip_offset = r->clip_offset + (int) (secs * s->clips[r->clip].rate + 0.5);
       nr->pattern = -1;
     }
   else if (r->pattern >= 0 && off % s->patterns[r->pattern].len)
@@ -470,6 +618,12 @@ int gr_region_split (gr_song *s, int region, int tick)
         {
           const gr_ctl *c = &src->ctls[k];
           gr_pattern_set_ctl (&s->patterns[np], (c->tick - rot + len) % len, c->type, c->value);
+        }
+      for (k = 0; k < src->nmarks; k++)
+        {
+          gr_mark m = src->marks[k];
+          m.tick = (int16_t) ((m.tick - rot + len) % len);
+          gr_pattern_add_mark (&s->patterns[np], &m);
         }
       nr->pattern = np;
     }

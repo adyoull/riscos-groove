@@ -64,6 +64,7 @@ typedef struct
   float master;
   int nmeters;
   gr_meter meters[GR_MAX_METERS];
+  int ntempos;
 } song_head;
 
 static int take (const gr_song *s, snap *out)
@@ -77,7 +78,9 @@ static int take (const gr_song *s, snap *out)
   h.ntracks = s->ntracks; h.master = s->master;
   h.nmeters = s->nmeters;
   memcpy (h.meters, s->meters, sizeof h.meters);
+  h.ntempos = s->ntempos;
   put (&b, &h, sizeof h);
+  put (&b, s->tempos, (size_t) s->ntempos * sizeof s->tempos[0]);
   for (i = 0; i < s->ntracks; i++)
     {
       gr_track t = s->tracks[i];
@@ -103,6 +106,8 @@ static int take (const gr_song *s, snap *out)
         put (&b, p->notes, (size_t) p->nnotes * sizeof p->notes[0]);
         put_int (&b, p->nctls);
         put (&b, p->ctls, (size_t) p->nctls * sizeof p->ctls[0]);
+        put_int (&b, p->nmarks);
+        put (&b, p->marks, (size_t) p->nmarks * sizeof p->marks[0]);
       }
   put_int (&b, -1);
   for (i = 0; i < GR_MAX_CLIPS; i++)
@@ -153,6 +158,8 @@ static void give (const snap *sn, gr_song *s)
   s->master = h.master;
   s->nmeters = h.nmeters;
   memcpy (s->meters, h.meters, sizeof s->meters);
+  s->ntempos = h.ntempos >= 0 && h.ntempos <= GR_MAX_TEMPOS ? h.ntempos : 0;
+  get (&r, s->tempos, (size_t) s->ntempos * sizeof s->tempos[0]);
   s->ntracks = h.ntracks;
   for (i = 0; i < h.ntracks && i < GR_MAX_TRACKS; i++)
     {
@@ -179,6 +186,10 @@ static void give (const snap *sn, gr_song *s)
       if (p->nctls < 0 || p->nctls > GR_MAX_CTLS)
         p->nctls = 0;
       get (&r, p->ctls, (size_t) p->nctls * sizeof p->ctls[0]);
+      p->nmarks = get_int (&r);
+      if (p->nmarks < 0 || p->nmarks > GR_MAX_MARKS)
+        p->nmarks = 0;
+      get (&r, p->marks, (size_t) p->nmarks * sizeof p->marks[0]);
     }
   for (i = 0; i < GR_MAX_CLIPS; i++)
     s->clips[i].used = 0;

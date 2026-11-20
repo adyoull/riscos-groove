@@ -24,7 +24,9 @@ void gs_free (gs_score *sc)
     {
       free (sc->parts[i].notes);
       free (sc->parts[i].pedals);
+      free (sc->parts[i].marks);
     }
+  free (sc->tempos);
   free (sc->parts);
   free (sc->meas);
   memset (sc, 0, sizeof *sc);
@@ -95,6 +97,56 @@ int gs_add_pedal (gs_part *p, int measure, double off, int down)
   p->pedals[p->npedals].off = off;
   p->pedals[p->npedals].down = down;
   p->npedals++;
+  return 0;
+}
+
+int gs_add_mark (gs_part *p, int measure, double off, int emeasure, double eoff,
+                 int kind, int value, int pitch, int staff)
+{
+  gs_mark *k;
+  if (measure < 0)
+    return 0;
+  if (p->nmarks == p->markcap)
+    {
+      int cap = p->markcap ? p->markcap * 2 : 64;
+      gs_mark *a = realloc (p->marks, (size_t) cap * sizeof *a);
+      if (!a)
+        return -1;
+      p->marks = a;
+      p->markcap = cap;
+    }
+  k = &p->marks[p->nmarks++];
+  k->measure = measure;
+  k->off = off;
+  k->emeasure = emeasure;
+  k->eoff = eoff;
+  k->kind = kind;
+  k->value = value;
+  k->pitch = pitch;
+  k->staff = staff;
+  k->hi = pitch;
+  return 0;
+}
+
+int gs_add_tempo (gs_score *sc, int measure, double off, double bpm)
+{
+  if (bpm <= 0 || measure < 0)
+    return 0;
+  if (sc->tempo == 0)
+    sc->tempo = bpm;
+  if (sc->ntempos == sc->tempocap)
+    {
+      int cap = sc->tempocap ? sc->tempocap * 2 : 16;
+      gs_tempo *a = realloc (sc->tempos, (size_t) cap * sizeof *a);
+      if (!a)
+        return -1;
+      sc->tempos = a;
+      sc->tempocap = cap;
+    }
+  sc->tempos[sc->ntempos].measure = measure;
+  sc->tempos[sc->ntempos].off = off;
+  sc->tempos[sc->ntempos].bpm = bpm;
+  sc->ntempos++;
   return 0;
 }
 
@@ -295,6 +347,19 @@ int gs_place (gr_song *s, gs_score *sc, int from, const char *kind, const char *
         }
       if (sc->tempo > 0)
         s->tempo = sc->tempo < 40 ? 40 : sc->tempo > 240 ? 240 : (int) floor (sc->tempo + 0.5);
+      /* Its tempo changes, played out with the repeats. */
+      s->ntempos = 0;
+      for (i = 0; i < norder; i++)
+        {
+          int k;
+          for (k = 0; k < sc->ntempos; k++)
+            if (sc->tempos[k].measure == order[i])
+              {
+                int tk = from + (int) floor ((mstart[i] + sc->tempos[k].off) * GR_PPQ + 0.5);
+                if (fabs (gr_tempo_at (s, tk) - sc->tempos[k].bpm) > 0.01)
+                  gr_tempo_add (s, tk, sc->tempos[k].bpm);
+              }
+        }
       while (s->ntracks)
         gr_track_delete (s, s->ntracks - 1);
     }
@@ -422,6 +487,53 @@ int gs_place (gr_song *s, gs_score *sc, int from, const char *kind, const char *
                   c[k].tick -= GR_PPQ / 16;
               gr_place_ctls (s, t, c, nc, from, &full_at, &dropped);
               free (c);
+            }
+        }
+      /* The written marks, played out too: one that spans ends where its
+         end is next played. */
+      if (p->nmarks && full_at < 0)
+        {
+          gr_pmark *pm;
+          int nm = 0;
+          for (o = 0; o < norder; o++)
+            for (k = 0; k < p->nmarks; k++)
+              if (p->marks[k].measure == order[o])
+                nm++;
+          if (nm && (pm = malloc ((size_t) nm * sizeof *pm)))
+            {
+              nm = 0;
+              for (o = 0; o < norder; o++)
+                for (k = 0; k < p->nmarks; k++)
+                  {
+                    const gs_mark *g = &p->marks[k];
+                    int o2 = o;
+                    if (g->measure != order[o])
+                      continue;
+                    if (g->emeasure >= 0)
+                      {
+                        while (o2 < norder && order[o2] != g->emeasure)
+                          o2++;
+                        if (o2 == norder)
+                          continue;
+                      }
+                    pm[nm].tick = (int) floor ((mstart[o] + g->off) * GR_PPQ + 0.5);
+                    pm[nm].len = g->emeasure < 0 ? 0
+                      : (int) floor ((mstart[o2] + g->eoff) * GR_PPQ + 0.5) - pm[nm].tick;
+                    if (pm[nm].len < 0)
+                      continue;
+                    pm[nm].kind = g->kind;
+                    pm[nm].value = g->value;
+                    pm[nm].pitch = g->pitch;
+                    if (g->kind == GR_MK_ARPEGGIO)
+                      pm[nm].len = g->hi;      /* (its top note, for a chord spread) */
+                    pm[nm].staff = g->staff;
+                    nm++;
+                  }
+              {
+                int lost = 0;     /* (a pattern full of marks: they're left out, not reported) */
+                gr_place_marks (s, t, pm, nm, from, &lost);
+              }
+              free (pm);
             }
         }
     }

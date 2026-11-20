@@ -57,6 +57,7 @@ void midisynth_config_init(midisynth_config *config);
 /* Create a synthesiser. Output is 16-bit stereo. Returns NULL on failure;
    midisynth_last_error(NULL) says why. */
 midisynth *midisynth_create_ex(const midisynth_config *config);
+midisynth *midisynth_create_copy(midisynth *from, int max_voices); /* Groove: shares the samples */
 
 /* The same with the default settings, apart from the SoundFont (NULL for
    the default) and the sample rate. */
@@ -102,6 +103,8 @@ void midisynth_program(midisynth *ms, int channel, int program);
 void midisynth_control(midisynth *ms, int channel, int control, int value);
 void midisynth_pitch_bend(midisynth *ms, int channel, int value); /* 0-16383 */
 void midisynth_all_notes_off(midisynth *ms);
+int  midisynth_voices(midisynth *ms);              /* Groove: voices sounding */
+void midisynth_shed_voices(midisynth *ms, int keep); /* Groove: end some quickly */
 /* A raw MIDI message: status byte plus up to two data bytes */
 void midisynth_send(midisynth *ms, int status, int data1, int data2);
 
@@ -111,6 +114,7 @@ void midisynth_send(midisynth *ms, int status, int data1, int data2);
    16-bit samples. With mix != 0 the music is added to what's already
    there (with clipping), otherwise the buffer is overwritten. */
 void midisynth_render(midisynth *ms, int16_t *buffer, int frames, int mix);
+void midisynth_render_float(midisynth *ms, float *buffer, int frames); /* Groove: added in */
 
 /* ...or let the synth play on its own, for programs without sound output
    of their own. RISC OS only: elsewhere open returns 0 ("not supported").

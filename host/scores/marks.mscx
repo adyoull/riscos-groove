@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- marks.musicxml as MuseScore 4.2 writes it: a slur, a crescendo,
+     dynamics, a spread chord, staccato and an accent, an 8va line, and a
+     tempo change (100, then 60 from bar 3), all as spanners and marks
+     MuseScore keeps (the notes are played evenly). -->
+<museScore version="4.20">
+  <Score>
+    <Division>480</Division>
+    <Part id="1">
+      <Staff id="1"/>
+      <trackName>Flute</trackName>
+      <Instrument id="flute">
+        <longName>Flute</longName>
+        <Channel><program value="73"/></Channel>
+        </Instrument>
+      </Part>
+    <Staff id="1">
+      <Measure>
+        <voice>
+          <TimeSig><sigN>4</sigN><sigD>4</sigD></TimeSig>
+          <Tempo><tempo>1.666667</tempo><followText>1</followText><text><sym>metNoteQuarterUp</sym> = 100</text></Tempo>
+          <Dynamic><subtype>p</subtype><velocity>49</velocity></Dynamic>
+          <Spanner type="HairPin">
+            <HairPin><subtype>0</subtype></HairPin>
+            <next><location><fractions>1/1</fractions></location></next>
+            </Spanner>
+          <Chord>
+            <durationType>quarter</durationType>
+            <Spanner type="Slur">
+              <Slur/>
+              <next><location><fractions>3/4</fractions></location></next>
+              </Spanner>
+            <Note><pitch>72</pitch><tpc>14</tpc></Note>
+            </Chord>
+          <Chord><durationType>quarter</durationType><Note><pitch>74</pitch><tpc>16</tpc></Note></Chord>
+          <Chord><durationType>quarter</durationType><Note><pitch>76</pitch><tpc>18</tpc></Note></Chord>
+          <Chord>
+            <durationType>quarter</durationType>
+            <Spanner type="Slur"><prev><location><fractions>-3/4</fractions></location></prev></Spanner>
+            <Note><pitch>77</pitch><tpc>13</tpc></Note>
+            </Chord>
+          <Spanner type="HairPin"><prev><location><fractions>-1/1</fractions></location></prev></Spanner>
+          </voice>
+        </Measure>
+      <Measure>
+        <voice>
+          <Dynamic><subtype>f</subtype><velocity>96</velocity></Dynamic>
+          <Chord>
+            <durationType>half</durationType>
+            <Arpeggio><subtype>0</subtype></Arpeggio>
+            <Note><pitch>72</pitch><tpc>14</tpc></Note>
+            <Note><pitch>76</pitch><tpc>18</tpc></Note>
+            <Note><pitch>79</pitch><tpc>15</tpc></Note>
+            </Chord>
+          <Chord>
+            <durationType>quarter</durationType>
+            <Articulation><subtype>articStaccatoAbove</subtype></Articulation>
+            <Note><pitch>79</pitch><tpc>15</tpc></Note>
+            </Chord>
+          <Chord>
+            <durationType>quarter</durationType>
+            <Articulation><subtype>articAccentAbove</subtype></Articulation>
+            <Note><pitch>81</pitch><tpc>17</tpc></Note>
+            </Chord>
+          </voice>
+        </Measure>
+      <Measure>
+        <voice>
+          <Tempo><tempo>1</tempo><followText>1</followText><text><sym>metNoteQuarterUp</sym> = 60</text></Tempo>
+          <Spanner type="Ottava">
+            <Ottava><subtype>8va</subtype></Ottava>
+            <next><location><measures>1</measures></location></next>
+            </Spanner>
+          <Chord><durationType>quarter</durationType><Note><pitch>84</pitch><tpc>14</tpc></Note></Chord>
+          <Chord><durationType>quarter</durationType><Note><pitch>86</pitch><tpc>16</tpc></Note></Chord>
+          <Chord><durationType>quarter</durationType><Note><pitch>88</pitch><tpc>18</tpc></Note></Chord>
+          <Chord><durationType>quarter</durationType><Note><pitch>89</pitch><tpc>13</tpc></Note></Chord>
+          </voice>
+        </Measure>
+      <Measure>
+        <voice>
+          <Spanner type="Ottava"><prev><location><measures>-1</measures></location></prev></Spanner>
+          <Chord><durationType>whole</durationType><Note><pitch>72</pitch><tpc>14</tpc></Note></Chord>
+          </voice>
+        </Measure>
+      </Staff>
+    </Score>
+  </museScore>

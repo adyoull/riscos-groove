@@ -23,6 +23,9 @@ enum { ND_NONE, ND_PPP, ND_PP, ND_P, ND_MP, ND_MF, ND_F, ND_FF, ND_FFF };
 /* Articulations (bits): a note played short, or much harder than those around it. */
 #define NA_STACCATO 1
 #define NA_ACCENT   2
+#define NA_ARPEGGIO 4             /* a spread chord (from a score's mark) */
+#define NA_ARP_DOWN 8             /* spread from the top down (an arrow down) */
+#define NA_ARP_UP   16            /* an arrow up (spread from the bottom, as usual) */
 /* Hairpins (bits): a crescendo or diminuendo starts here, or one ends. */
 #define NW_CRESC 1
 #define NW_DIM   2
@@ -79,6 +82,7 @@ typedef struct
   unsigned char ending;         /* in a first or second ending (1, 2), or 0 */
   unsigned char ending_start, ending_stop;   /* its bracket starts here; ends here
                                                (1: with a hook down, 2: open) */
+  int tempo;                    /* the tempo changes here (in the bar): crotchets a minute; 0 */
 } gr_nbar;
 
 /* Each part has up to two staves of two voices: voice 0 has every bar,

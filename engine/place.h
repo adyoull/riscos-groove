@@ -26,4 +26,12 @@ typedef struct { int tick, type, value; } gr_pctl;
    song is full; events that don't fit are counted in *dropped. */
 int gr_place_ctls (gr_song *s, int t, const gr_pctl *c, int n, int from, int *full_at, int *dropped);
 
+/* A written mark (gr_mark) in song ticks from the import's start. */
+typedef struct { int tick, len, kind, value, pitch, staff; } gr_pmark;
+
+/* Put n marks on track t, each into the region playing at its time (one
+   over a rest, where no region is, is left out). Marks that don't fit in
+   a pattern are counted in *dropped. */
+void gr_place_marks (gr_song *s, int t, const gr_pmark *m, int n, int from, int *dropped);
+
 #endif

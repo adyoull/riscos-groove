@@ -26,8 +26,10 @@
 #define GR_MAX_PATTERNS  1024
 #define GR_MAX_NOTES     384           /* per pattern */
 #define GR_MAX_CTLS      512           /* controller events per pattern */
+#define GR_MAX_MARKS     128           /* written marks per pattern */
 #define GR_MAX_CLIPS     16
 #define GR_MAX_METERS    32            /* time signature changes */
+#define GR_MAX_TEMPOS    256           /* tempo changes */
 #define GR_NAME          24
 
 #define GR_DRUM_SOUNDS   8           /* Groove's own drum sounds (GV_*) */
@@ -72,6 +74,33 @@ typedef struct
   int16_t value;
 } gr_ctl;
 
+/* A mark written in a score Groove imported (MuseScore, MusicXML): kept
+   with the notes so the Score window writes what the score said, rather
+   than working it out from how the notes are played. A part with none
+   (played in, or from a MIDI file) is worked out as before. */
+enum
+{
+  GR_MK_SLUR = 1,               /* tick to tick+len (the last note's start) */
+  GR_MK_HAIRPIN,                /* value 1 crescendo, 2 diminuendo; tick to tick+len */
+  GR_MK_DYNAMIC,                /* value: ND_PPP..ND_FFF (notation.h) */
+  GR_MK_OTTAVA,                 /* value 1 8va, -1 8vb, 2 15ma, -2 15mb; to tick+len */
+  GR_MK_ARPEGGIO,               /* the chord at tick is spread: value 1, 2 upwards (an arrow),
+                                   -1 downwards; its notes from pitch up to len (0, 0: all) */
+  GR_MK_STACCATO,               /* the note (pitch; 0 every note) at tick */
+  GR_MK_ACCENT,
+  GR_MK_KINDS
+};
+
+typedef struct
+{
+  int16_t tick;                 /* from the start of the pattern */
+  int16_t len;                  /* ticks, for marks that span */
+  uint8_t kind;                 /* GR_MK_* */
+  int8_t value;
+  uint8_t pitch;
+  uint8_t staff;                /* 0, or 1: the lower staff of a piano part */
+} gr_mark;
+
 typedef struct
 {
   char name[GR_NAME];
@@ -81,6 +110,8 @@ typedef struct
   gr_note notes[GR_MAX_NOTES];  /* kept sorted by tick */
   int nctls;
   gr_ctl ctls[GR_MAX_CTLS];     /* kept sorted by tick */
+  int nmarks;
+  gr_mark marks[GR_MAX_MARKS];  /* kept sorted by tick */
 } gr_pattern;
 
 typedef struct
@@ -133,9 +164,18 @@ typedef struct
   int bar, num, den;
 } gr_meter;
 
+/* A tempo change: from tick on, bpm crotchets a minute. */
 typedef struct
 {
-  int tempo;                    /* BPM (crotchets a minute) */
+  int tick;
+  float bpm;
+} gr_tempo;
+
+typedef struct
+{
+  int tempo;                    /* BPM (crotchets a minute) at the start */
+  int ntempos;                  /* changes after the start, in order of tick */
+  gr_tempo tempos[GR_MAX_TEMPOS];
   int key;                      /* 0 = C .. 11 = B; loops are transposed into it */
   int bars;                     /* song length */
   int loop_on, loop_start, loop_end;   /* ticks */
@@ -166,6 +206,16 @@ void gr_pattern_delete_note (gr_pattern *p, int index);
    there); returns its index, or -1 if the pattern is full. */
 int  gr_pattern_set_ctl (gr_pattern *p, int tick, int type, int value);
 int  gr_pattern_find_ctl (const gr_pattern *p, int tick, int type);
+/* A written mark (from an imported score); its index, or -1 if full. */
+int  gr_pattern_add_mark (gr_pattern *p, const gr_mark *m);
+/* Is the chord at tick spread (an arpeggio mark)? 1 from the bottom up,
+   -1 from the top down, 0 not. And note k's turn in its spread chord (0
+   first), with how many notes the chord has in *count. */
+int  gr_arpeggio_at (const gr_pattern *p, int tick);
+const gr_mark *gr_arpeggio_mark (const gr_pattern *p, int tick);
+int  gr_arpeggio_has (const gr_mark *m, int pitch);     /* is this note in its spread? */
+int  gr_arpeggio_turn (const gr_pattern *p, int k, int *count);
+#define GR_ARP_STEP_MS 35       /* between the notes of a spread chord */
 void gr_pattern_delete_ctl (gr_pattern *p, int index);
 /* The value in force at tick (the last event at or before it), or dflt. */
 int  gr_ctl_value_at (const gr_pattern *p, int tick, int type, int dflt);
@@ -199,6 +249,16 @@ int  gr_bar_snap (const gr_song *s, int tick);   /* the nearest bar start */
 /* From bar on (until the next change). 0, or -1 if it isn't a valid meter
    or there's no room. */
 int  gr_set_meter (gr_song *s, int bar, int num, int den);
+
+/* Tempo: s->tempo at the start, then any changes (from a score or a MIDI
+   file). Times are from tick 0. Changing the starting tempo
+   (gr_tempo_base) changes every later one in proportion, so a piece can
+   be slowed down for practice as a whole. */
+double gr_tempo_at (const gr_song *s, int tick);           /* BPM in force */
+double gr_tick_seconds (const gr_song *s, double tick);
+double gr_seconds_tick (const gr_song *s, double secs);
+int  gr_tempo_add (gr_song *s, int tick, double bpm);      /* 0, or -1: no room */
+void gr_tempo_base (gr_song *s, int bpm);
 void gr_song_cover (gr_song *s, int end_tick);   /* make the song long enough */
 
 /* ---- loop library (loops.c) ------------------------------------------- */
@@ -326,6 +386,9 @@ int  gr_gm_need_second (const gr_song *s);
 int  gr_gm_second_ready (void);
 int  gr_gm_load_second (void);                   /* 0, or -1 (gr_gm_error) */
 const char *gr_gm_error (void);
+int  gr_gm_voices (void);            /* SoundFont voices sounding */
+int  gr_gm_stolen (void);    /* notes cut off for want of a voice, so far */
+void gr_gm_shed (int percent);       /* end the least missed, leaving percent of them */
 const char *gr_gm_program_name (int program);    /* "Acoustic Grand Piano" ... */
 const char *gr_gm_family_name (int family);      /* 0..15: "Piano" ... */
 int  gr_gm_kit (int i);                          /* i-th kit's program, i < GM_NKITS */

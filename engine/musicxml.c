@@ -126,6 +126,41 @@ static int drum_at (const char *step, int octave, const char *head)
   return any >= 0 ? any : 38;
 }
 
+/* Slurs, hairpins and 8va lines are written as a start and a stop, matched
+   by kind and number: those started and not yet stopped. */
+#define MAX_OPEN 32
+typedef struct { int kind, number, staff, measure, value; double off; } ospan;
+
+static int span (ospan *open, int *nopen, gs_part *gp, int kind, int value, const gx_node *x,
+                 int m, double at, int staff, int is_start, int is_stop)
+{
+  int number = gx_attr (x, "number") ? atoi (gx_attr (x, "number")) : 1, i;
+  if (is_start)
+    {
+      if (*nopen == MAX_OPEN)
+        memmove (open, open + 1, --*nopen * sizeof *open);   /* (the oldest is forgotten) */
+      open[*nopen].kind = kind;
+      open[*nopen].number = number;
+      open[*nopen].staff = staff;
+      open[*nopen].measure = m;
+      open[*nopen].off = at;
+      open[*nopen].value = value;
+      ++*nopen;
+      return 0;
+    }
+  if (!is_stop)
+    return 0;
+  for (i = *nopen - 1; i >= 0; i--)
+    if (open[i].kind == kind && open[i].number == number)
+      {
+        ospan o = open[i];
+        memmove (open + i, open + i + 1, (size_t) (*nopen - i - 1) * sizeof *open);
+        --*nopen;
+        return gs_add_mark (gp, o.measure, o.off, m, at, kind, o.value, 0, o.staff);
+      }
+  return 0;
+}
+
 int gs_read_musicxml (gs_score *sc, char *xml, size_t n, const char **why)
 {
   gx_doc *doc = gx_parse (xml, n);
@@ -160,6 +195,8 @@ int gs_read_musicxml (gs_score *sc, char *xml, size_t n, const char **why)
       gx_node *meas;
       int i, m = 0, divisions = 1, transpose = 0, vel = 80, chan = -1;
       unsigned volta = 0;
+      ospan open[MAX_OPEN];
+      int nopen = 0;
       const char *pid = gx_attr (part, "id");
       for (i = 0; i < npinfo && pid; i++)
         if (!strcmp (pinfo[i].id, pid))
@@ -302,6 +339,50 @@ int gs_read_musicxml (gs_score *sc, char *xml, size_t n, const char **why)
                   if (pitch >= 0 && !gx_child (e, "rest")
                       && gs_add_note (gp, m, start, snd, pitch, v, tie))
                     goto nomem;
+                  /* Its written marks (once a chord: on its first note). */
+                  if (pitch >= 0 && !gx_child (e, "rest"))
+                    {
+                      gx_node *no, *x;
+                      int staff = gx_int (e, "staff", 1) - 1;
+                      for (no = gx_child (e, "notations"); no; no = gx_next (no, "notations"))
+                        {
+                          for (x = gx_child (no, "slur"); x; x = gx_next (x, "slur"))
+                            if (span (open, &nopen, gp, GR_MK_SLUR, 0, x, m, start, staff,
+                                      gx_attr (x, "type") && !strcmp (gx_attr (x, "type"), "start"),
+                                      gx_attr (x, "type") && !strcmp (gx_attr (x, "type"), "stop")))
+                              goto nomem;
+                          {
+                            /* a spread chord: each of its notes says so; the
+                               spread covers them (not the other hand's) */
+                            gx_node *ag = gx_child (no, "arpeggiate");
+                            gs_mark *lm = NULL;
+                            int q;
+                            for (q = gp->nmarks - 1; q >= 0 && q >= gp->nmarks - 8 && !lm; q--)
+                              if (gp->marks[q].kind == GR_MK_ARPEGGIO && gp->marks[q].measure == m && gp->marks[q].off == start)
+                                lm = &gp->marks[q];
+                            if (ag && gx_child (e, "chord") && lm)
+                              {
+                                if (pitch < lm->pitch) lm->pitch = pitch;
+                                if (pitch > lm->hi) lm->hi = pitch;
+                              }
+                            else if (ag && gs_add_mark (gp, m, start, -1, 0, GR_MK_ARPEGGIO,
+                                                        !gx_attr (ag, "direction") ? 1 : !strcmp (gx_attr (ag, "direction"), "down") ? -1
+                                                        : !strcmp (gx_attr (ag, "direction"), "up") ? 2 : 1,
+                                                        pitch, staff))
+                              goto nomem;
+                          }
+                          if (!gx_child (e, "chord"))
+                            {
+                              gx_node *ar = gx_child (no, "articulations");
+                              if (ar && (gx_child (ar, "staccato") || gx_child (ar, "staccatissimo") || gx_child (ar, "spiccato"))
+                                  && gs_add_mark (gp, m, start, -1, 0, GR_MK_STACCATO, 0, 0, staff))
+                                goto nomem;
+                              if (ar && (gx_child (ar, "accent") || gx_child (ar, "strong-accent"))
+                                  && gs_add_mark (gp, m, start, -1, 0, GR_MK_ACCENT, 0, 0, staff))
+                                goto nomem;
+                            }
+                        }
+                    }
                   if (!gx_child (e, "chord"))
                     {
                       last_start = pos;
@@ -330,9 +411,37 @@ int gs_read_musicxml (gs_score *sc, char *xml, size_t n, const char **why)
                           if ((!strcmp (type, "start") || !strcmp (type, "change")) && gs_add_pedal (gp, m, at, 1))
                             goto nomem;
                         }
-                      /* (an 8va or 8vb line, octave-shift, changes nothing: the
+                      /* (an 8va or 8vb line, octave-shift, changes no pitch: the
                          notes under it are written at the pitch they sound) */
+                      int staff = gx_int (e, "staff", 1) - 1;
+                      gx_node *x = gx_child (dt, "octave-shift");
+                      if (x && gx_attr (x, "type"))
+                        {
+                          /* "down": the notes are written lower than they sound - 8va */
+                          int sz = gx_attr (x, "size") ? atoi (gx_attr (x, "size")) : 8;
+                          int v = (sz >= 15 ? 2 : 1) * (!strcmp (gx_attr (x, "type"), "up") ? -1 : 1);
+                          if (span (open, &nopen, gp, GR_MK_OTTAVA, v, x, m, at, staff, strcmp (gx_attr (x, "type"), "stop") != 0,
+                                    !strcmp (gx_attr (x, "type"), "stop")))
+                            goto nomem;
+                        }
+                      x = gx_child (dt, "wedge");
+                      if (x && gx_attr (x, "type"))
+                        {
+                          const char *t = gx_attr (x, "type");
+                          if (span (open, &nopen, gp, GR_MK_HAIRPIN, !strcmp (t, "diminuendo") ? 2 : 1, x, m, at, staff,
+                                    !strcmp (t, "crescendo") || !strcmp (t, "diminuendo"), !strcmp (t, "stop")))
+                            goto nomem;
+                        }
                       gx_node *dy = gx_child (dt, "dynamics");
+                      if (dy && dy->child)
+                        {
+                          static const char *nd[] = { "ppp", "pp", "p", "mp", "mf", "f", "ff", "fff" };
+                          int j;
+                          for (j = 0; j < 8; j++)
+                            if (!strcmp (dy->child->name, nd[j])
+                                && gs_add_mark (gp, m, at, -1, 0, GR_MK_DYNAMIC, j + 1, 0, staff))
+                              goto nomem;
+                        }
                       if (dy && dy->child)
                         {
                           /* A dynamic mark, as MuseScore plays it. */
@@ -352,8 +461,9 @@ int gs_read_musicxml (gs_score *sc, char *xml, size_t n, const char **why)
                   if (s && !pedal_seen && gx_attr (s, "damper-pedal") && gp
                       && gs_add_pedal (gp, m, at, (!strcmp (gx_attr (s, "damper-pedal"), "yes") || atoi (gx_attr (s, "damper-pedal")) > 0)))
                     goto nomem;
-                  if (s && gx_attr (s, "tempo") && sc->tempo == 0)
-                    sc->tempo = atof (gx_attr (s, "tempo"));
+                  if (s && gx_attr (s, "tempo") && (first || sc->tempo == 0)
+                      && gs_add_tempo (sc, m, at, atof (gx_attr (s, "tempo"))))
+                    goto nomem;
                   if (s && gx_attr (s, "dynamics"))
                     {
                       vel = (int) (atof (gx_attr (s, "dynamics")) * 0.9 + 0.5);

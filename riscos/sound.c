@@ -116,14 +116,46 @@ unsigned sound_underruns (void)
   return ring ? ring->underruns : 0;
 }
 
-/* Top the ring up to TARGET frames, rendering straight into it (at most two
-   runs: to the end of the buffer, then from its start). */
+/* How hard rendering is working: over each half second of sound made,
+   the time it took. Only if it's more than LOAD_MAX% of the half second
+   and the sound waiting to be played has run low (it really can't keep
+   up: the desktop would crawl and the sound break up) are the voices
+   least missed let go (gr_gm_shed), and only a few. (0.4.2-test2 to
+   test7 let 40% go at 60%, which on a Pi cut notes in a big score.) */
+#define LOAD_WINDOW (GR_RATE / 2)
+#define LOAD_MAX    85
+#define LOW_WATER   (TARGET / 4)    /* frames waiting to play: running low */
+#define FILL_MAX_CS 4               /* the longest one fill renders for */
+#define CHUNK       512             /* frames rendered at a time */
+static int win_frames, win_cs;
+/* Over a play, for the log: how hard rendering worked on average and at
+   worst (per half second), and the most SoundFont voices sounding. */
+static int was_playing, play_frames, play_cs, play_peak, play_voices, play_stolen;
+
+static int now_cs (void)
+{
+  int t = 0;
+  _swix (OS_ReadMonotonicTime, _OUT (0), &t);
+  return t;
+}
+
+/* Top the ring up to TARGET frames, rendering straight into it, a chunk at
+   a time, stopping early if it's taking too long (the ring runs short
+   rather than the desktop freezing). */
 void sound_fill (gr_engine *e)
 {
   uint32_t size, fill;
-  int want, n;
+  int want, n, t0, t;
   if (!ring)
     return;
+  if (was_playing && !gr_playing (e) && play_frames > 0)
+    {
+      startlog ("sound: rendering took %d%% of the time playing (at worst %d%%), %d SoundFont voices at most, %d notes cut short, %u underruns so far",
+                play_cs * 100 / (play_frames / (GR_RATE / 100)), play_peak, play_voices, gr_gm_stolen () - play_stolen, sound_underruns ());
+      play_stolen = gr_gm_stolen ();
+      play_frames = play_cs = play_peak = play_voices = 0;
+    }
+  was_playing = gr_playing (e);
   /* With nothing to play, let the ring drain and the handler fill silence:
      no rendering at all while the desktop is idle. */
   if (!gr_busy (e))
@@ -133,16 +165,44 @@ void sound_fill (gr_engine *e)
     return;
   size = RING_FRAMES * 4;
   fill = ring->fill;
-  while (want > 0)
+  t0 = t = now_cs ();
+  while (want > 0 && t - t0 < FILL_MAX_CS)
     {
       n = (int) ((size - fill) / 4);              /* room before the end */
       if (n > want)
         n = want;
+      if (n > CHUNK)
+        n = CHUNK;
       gr_render_words (e, ring->start + fill / 4, n);
       fill = (fill + (uint32_t) n * 4) % size;
+      ring->fill = fill;                           /* one store: now visible */
       want -= n;
+      win_frames += n;
+      t = now_cs ();
     }
-  ring->fill = fill;                               /* one store: now visible */
+  win_cs += t - t0;
+  if (gr_gm_voices () > play_voices)
+    play_voices = gr_gm_voices ();
+  if (win_frames >= LOAD_WINDOW)
+    {
+      if (was_playing)
+        {
+          int pct = win_cs * GR_RATE / win_frames;
+          play_frames += win_frames;
+          play_cs += win_cs;
+          if (pct > play_peak)
+            play_peak = pct;
+        }
+      /* (rendering took win_cs to make win_frames of sound) */
+      if (win_cs * GR_RATE > LOAD_MAX * win_frames && sound_latency () < LOW_WATER)
+        {
+          int before = gr_gm_voices ();
+          gr_gm_shed (80);
+          startlog ("sound: rendering %d%% of the time with %d SoundFont voices: down to %d",
+                    win_cs * GR_RATE / win_frames, before, gr_gm_voices ());
+        }
+      win_frames = win_cs = 0;
+    }
 }
 
 void sound_close (void)
