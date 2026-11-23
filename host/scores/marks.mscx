@@ -2,7 +2,9 @@
 <!-- marks.musicxml as MuseScore 4.2 writes it: a slur, a crescendo,
      dynamics, a spread chord, staccato and an accent, an 8va line, and a
      tempo change (100, then 60 from bar 3), all as spanners and marks
-     MuseScore keeps (the notes are played evenly). -->
+     MuseScore keeps (the notes are played evenly). The notes under the
+     8va are kept as written, as MuseScore keeps them: they sound an
+     octave up. -->
 <museScore version="4.20">
   <Score>
     <Division>480</Division>
@@ -71,10 +73,10 @@
             <Ottava><subtype>8va</subtype></Ottava>
             <next><location><measures>1</measures></location></next>
             </Spanner>
-          <Chord><durationType>quarter</durationType><Note><pitch>84</pitch><tpc>14</tpc></Note></Chord>
-          <Chord><durationType>quarter</durationType><Note><pitch>86</pitch><tpc>16</tpc></Note></Chord>
-          <Chord><durationType>quarter</durationType><Note><pitch>88</pitch><tpc>18</tpc></Note></Chord>
-          <Chord><durationType>quarter</durationType><Note><pitch>89</pitch><tpc>13</tpc></Note></Chord>
+          <Chord><durationType>quarter</durationType><Note><pitch>72</pitch><tpc>14</tpc></Note></Chord>
+          <Chord><durationType>quarter</durationType><Note><pitch>74</pitch><tpc>16</tpc></Note></Chord>
+          <Chord><durationType>quarter</durationType><Note><pitch>76</pitch><tpc>18</tpc></Note></Chord>
+          <Chord><durationType>quarter</durationType><Note><pitch>77</pitch><tpc>13</tpc></Note></Chord>
           </voice>
         </Measure>
       <Measure>

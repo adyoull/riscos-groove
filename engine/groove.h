@@ -26,9 +26,9 @@
 #define GR_MAX_PATTERNS  1024
 #define GR_MAX_NOTES     384           /* per pattern */
 #define GR_MAX_CTLS      512           /* controller events per pattern */
-#define GR_MAX_MARKS     128           /* written marks per pattern */
+#define GR_MAX_MARKS     256           /* written marks per pattern */
 #define GR_MAX_CLIPS     16
-#define GR_MAX_METERS    32            /* time signature changes */
+#define GR_MAX_METERS    256           /* time signature changes */
 #define GR_MAX_TEMPOS    256           /* tempo changes */
 #define GR_NAME          24
 
@@ -58,7 +58,46 @@ typedef struct
   int16_t len;                  /* ticks (ignored for drums) */
   uint8_t pitch;                /* MIDI note 0..127 (drums too: DR_* and the rest) */
   uint8_t vel;                  /* 1..127 */
+  uint8_t wr;                   /* how a score Groove imported wrote it (GR_WR_*), or 0 */
+  uint8_t spell;                /* and its accidental: GR_SP | (alter + 2), alter -2..2; or 0 */
+  int16_t tie1;                 /* written as notes tied together: the first one's length in
+                                   ticks (the rest as Groove writes it); 0 if not; or GR_TIE_* */
 } gr_note;
+
+/* gr_note.tie1 for a score's tie between notes that aren't next to each
+   other (from an arpeggio's notes to the chord they ring into): this note
+   is tied on to a later one, from an earlier one, or both. Each is played. */
+#define GR_TIE_OUT  (-1)
+#define GR_TIE_IN   (-2)
+#define GR_TIE_BOTH (-3)
+
+/* gr_note.wr: a note from an imported score (MuseScore, MusicXML) keeps
+   the staff and voice it was written in, so the Score window writes it
+   there rather than working them out from the pitches. */
+#define GR_WR          0x80     /* written: the rest of wr says how */
+#define GR_WR_VOICE    0x03     /* its voice on the staff, 0..3 */
+#define GR_WR_STAFF    0x04     /* on the lower staff of a two-staff part */
+#define GR_WR_HALF     0x08     /* played for half its written length (staccato) */
+#define GR_WR_CROSS    0x10     /* moved to the other staff (staff is where it's shown) */
+#define GR_WR_TUPLEN   0x60     /* in a tuplet as long as: 0x20 less than a beat, 0x40 a beat,
+                                   0x60 two beats (0: not known) */
+#define GR_SP_TUPLET   0xE0     /* gr_note.spell: its tuplet (GR_TUP_* << 5) */
+enum { GR_TUP_NONE, GR_TUP_3, GR_TUP_5, GR_TUP_6, GR_TUP_2, GR_TUP_4, GR_TUP_7, GR_TUP_OTHER };
+/* The tuplet bits (wr | spell << 8) for act notes in the time of norm,
+   the whole of it glen quarters long, in a bar whose beat is beat quarters. */
+int gr_tuplet_bits (int act, int norm, double glen, double beat);
+/* A GR_MK_NOTE mark's staff, from the note's wr (with its spelling << 8):
+   its staff (1), moved there from the other (2), tied on from the note
+   playing then (4, tied), its tuplet (<< 3) and tuplet length (<< 6). */
+#define gr_mknote_staff(wr, tied) (((wr) & GR_WR_STAFF ? 1 : 0) | ((wr) & GR_WR_CROSS ? 2 : 0) | ((tied) ? 4 : 0) \
+                                   | (((wr) >> 13) & 7) << 3 | (((wr) & GR_WR_TUPLEN) >> 5) << 6)
+/* A rest mark's value (GR_MK_REST) with its tuplet: gr_tuplet_bits' as
+   (type << 2 | length), above the voice. */
+#define gr_rest_tuplet(bits) ((((bits) >> 13) & 7) << 2 | ((bits) & 0x60))
+#define GR_SP          0x10     /* gr_note.spell: spelled with an accidental, (spell & 7) - 2 */
+#define GR_SP_HIDDEN   0x08     /* gr_note.spell: a score's note it plays but doesn't show */
+/* Copies how a note was written (wr, spell, tie1) from one to another. */
+#define GR_NOTE_WRITTEN(dst, src) ((dst)->wr = (src)->wr, (dst)->spell = (src)->spell, (dst)->tie1 = (src)->tie1)
 
 /* A controller event: a MIDI Control Change (type 0..127, value 0..127),
    or a program change, pitch bend (-8192..8191, 0 is the middle) or
@@ -81,15 +120,61 @@ typedef struct
 enum
 {
   GR_MK_SLUR = 1,               /* tick to tick+len (the last note's start) */
-  GR_MK_HAIRPIN,                /* value 1 crescendo, 2 diminuendo; tick to tick+len */
-  GR_MK_DYNAMIC,                /* value: ND_PPP..ND_FFF (notation.h) */
+  GR_MK_HAIRPIN,                /* value 1 crescendo, 2 diminuendo, + GR_MK_ABOVE: over the
+                                   staff; tick to tick+len */
+  GR_MK_DYNAMIC,                /* value: ND_PPP..ND_FFF (notation.h); pitch 1: over the staff */
   GR_MK_OTTAVA,                 /* value 1 8va, -1 8vb, 2 15ma, -2 15mb; to tick+len */
   GR_MK_ARPEGGIO,               /* the chord at tick is spread: value 1, 2 upwards (an arrow),
-                                   -1 downwards; its notes from pitch up to len (0, 0: all) */
+                                   -1 downwards, + GR_ARP_SPAN (- for down): its line down
+                                   through the staff below too (pitch: how many, 1 if 0);
+                                   its notes from pitch up to
+                                   len (0, 0: all); staff >> 1: half spaces the score
+                                   draws its line on down, past the chord */
   GR_MK_STACCATO,               /* the note (pitch; 0 every note) at tick */
   GR_MK_ACCENT,
+  GR_MK_CLEF,                   /* the staff's clef changes to value (NC_*, notation.h) */
+  GR_MK_TENUTO,                 /* the chord at tick: a tenuto line */
+  GR_MK_MARCATO,                /* a strong accent (^) */
+  GR_MK_FERMATA,                /* a pause over the chord or rest at tick (value -1: under it) */
+  GR_MK_ORNAMENT,               /* value 1 a trill, 2 a mordent, 3 a turn */
+  GR_MK_GLISS,                  /* a glissando from the note (pitch) at tick to the next */
+  GR_MK_GRACE,                  /* a grace note (pitch) before the chord at tick: value its
+                                   NV_* (| 0x40 slashed: an acciaccatura); len its place, 0 first */
+  GR_MK_REST,                   /* a rest the score writes, len long, in voice value & 3, its
+                                   tuplet (gr_rest_tuplet) above */
+  GR_MK_TREMOLO,                /* a tremolo: value its strokes (1..4); | 0x10 between the chord
+                                   at tick and the next (len the two), each written as NV_* pitch & 15,
+                                   with pitch >> 4 dots */
+  GR_MK_NOTE,                   /* a note the score writes but Groove doesn't play (a unison
+                                   in another voice, a cue note): pitch, len long; value its
+                                   voice (& 3) and spelling (gr_note.spell, >> 2), | 0x80 a cue
+                                   note (shown small); staff as gr_mknote_staff */
+  GR_MK_BEAM,                   /* how the score beams the chord at tick: value GR_BEAM_* | its
+                                   voice << 3 */
+  GR_MK_TIE,                    /* a long note the score writes as three or more tied: one
+                                   more of its ties, at tick (the note pitch, in voice value & 3,
+                                   on staff & 1; its first is gr_note.tie1) */
+  GR_MK_STEM,                   /* the score sets the chord at tick's stem: value 1 up, 2 down,
+                                   | its voice << 3 */
+  GR_MK_NOPEDAL,                /* a pedal line the score doesn't show all of: from tick (down:
+                                   value & 1, its "Ped." not shown) to tick + len (up: value & 2,
+                                   its star not shown); value & 4: a line from one to the other
+                                   instead (with a hook at its end, and its start if no
+                                   "Ped."); value & 8: over the staff, not under; it still
+                                   plays */
+  GR_MK_TUPLET,                 /* a score's tuplet, tick to tick + len: pitch notes in the time
+                                   of staff >> 1, each written value & 0x1c >> 2 (NV_*), in voice
+                                   value & 3, on staff & 1; value & 0x20 inside another, 0x40 its
+                                   number not shown, 0x80 no bracket */
   GR_MK_KINDS
 };
+
+#define GR_ARP_SPAN 4
+#define GR_MK_ABOVE 4             /* (a hairpin's value: over the staff) */
+
+/* GR_MK_BEAM: a beam starts at the chord, goes on through it, it has none
+   (a flag), or a beam ends with it. */
+enum { GR_BEAM_AUTO, GR_BEAM_BEGIN, GR_BEAM_MID, GR_BEAM_NONE, GR_BEAM_END };
 
 typedef struct
 {
@@ -155,20 +240,76 @@ typedef struct
   int bank_msb, bank_lsb;       /* Bank Select (CC 0 and 32) before the program */
   int program;                  /* 0..127; auto: the sound's GM program */
   float meter;                  /* peak level for the UI, decays */
+  /* How a score Groove imported wrote this part (written != 0), rather
+     than as Groove would by its sound: */
+  int written;
+  int wtranspose;               /* semitones written above how it sounds */
+  int wclef[2];                 /* each staff's clef at the start: NC_* + 1, or 0 */
+  int wpedal;                   /* 1: the score doesn't show its pedalling (it plays) */
+  int joined;                   /* GR_JOIN_*: its staves go on from the track before
+                                   (one instrument on three or more staves) */
+  int wlines;                   /* 1: written on a staff of one line (a score's drum); 0 five */
+  unsigned char drumline[128];  /* a drum track from a score: each key's line as its kit has it
+                                   (0 the top line, down in half spaces) + 64; 0 Groove's own */
 } gr_track;
+
+/* gr_track.joined: one brace over both tracks' staves, the name once; or
+   (an organ's pedals) the bar lines through, a brace each. */
+enum { GR_JOIN_NONE, GR_JOIN_BRACE, GR_JOIN_BARS };
 
 /* A time signature from a bar (0-based) on: num beats of a 1/den note.
    den is 1, 2, 4, 8, 16, 32 or 64. */
 typedef struct
 {
   int bar, num, den;
+  int symbol;                   /* written as a symbol: 1 common time (C), 2 cut (alla breve);
+                                   3 not written (a bar of a score longer or shorter than its own) */
 } gr_meter;
+
+/* A key signature written in a score Groove imported, from a bar on:
+   sharps (+) or flats (-) as it sounds (concert), and major or minor.
+   A song with none has its keys worked out from its notes. */
+typedef struct
+{
+  int bar, fifths, minor;
+} gr_keysig;
+#define GR_MAX_KEYSIGS   64
+
+/* A syllable of a song's words, from a score Groove imported: under the
+   note starting at tick on track's staff (0, or 1 the lower). syllabic:
+   0 a word, 1 a word's first syllable, 2 one in the middle, 3 its last
+   (a hyphen joins one to the next). */
+#define GR_LYRIC 48
+typedef struct
+{
+  int track, tick;
+  unsigned char staff, verse, syllabic, spare;
+  char text[GR_LYRIC];          /* Latin-1 */
+} gr_lyric;
+
+/* gr_lyric.verse for a score's words that aren't sung: written over the
+   staff (as "dolce", "rit."), or under it (as "sostenuto"). */
+#define GR_TEXT_ABOVE 100
+#define GR_TEXT_BELOW 101
+/* ...and a tempo's words ("Andante."), over the staff in bold, its
+   metronome mark (if shown) after them; ending "(" if the mark is in
+   brackets */
+#define GR_TEXT_TEMPO 102
+#define GR_TEXT_PEDAL 104         /* ...a pedal's words ("Con" Ped., "simile"), on its line */
+#define GR_TEXT_TEMPO_MARK 103    /* (a metronome mark in it: the whole text, as "Andante. (\x86 = 66)") */
+/* A metronome mark's notes in a score's text (Latin-1's unused 0x86..):
+   a crotchet, minim, quaver, and a dot after one. */
+#define GR_CH_NOTE4 0x86
+#define GR_CH_NOTE2 0x87
+#define GR_CH_NOTE8 0x88
+#define GR_CH_NOTEDOT 0x89
 
 /* A tempo change: from tick on, bpm crotchets a minute. */
 typedef struct
 {
   int tick;
   float bpm;
+  int hidden;                   /* a score's: no metronome mark written for it */
 } gr_tempo;
 
 typedef struct
@@ -183,6 +324,17 @@ typedef struct
   float master;
   int nmeters;                  /* meters[0].bar is always 0 */
   gr_meter meters[GR_MAX_METERS];
+  int tempo_hidden;             /* a score's: no metronome mark written for its first tempo */
+  int pickup;                   /* a score's pickup (anacrusis): the ticks at the start of the
+                                   first bar that its score leaves out (0: none) */
+  gr_lyric *lyrics;             /* the words, in no order (malloc'd; gr_song_free frees them) */
+  int nlyrics, lyriccap;
+  unsigned short *srcbar;       /* a score's: the measure each bar is played from, + 1 (0: not
+                                   one), so the Score window writes only its repeats as repeats
+                                   (malloc'd; gr_song_free frees it) */
+  int nsrcbar;
+  int nkeysigs;                 /* written key signatures, in order of bar */
+  gr_keysig keysigs[GR_MAX_KEYSIGS];
   int ntracks;
   gr_track tracks[GR_MAX_TRACKS];
   gr_region regions[GR_MAX_REGIONS];
@@ -249,6 +401,15 @@ int  gr_bar_snap (const gr_song *s, int tick);   /* the nearest bar start */
 /* From bar on (until the next change). 0, or -1 if it isn't a valid meter
    or there's no room. */
 int  gr_set_meter (gr_song *s, int bar, int num, int den);
+/* A written key signature from bar on (replacing one there). 0, or -1
+   if there's no room. */
+int  gr_set_keysig (gr_song *s, int bar, int fifths, int minor);
+/* A syllable (text in Latin-1). 0, or -1 if there's no memory. */
+int  gr_lyric_add (gr_song *s, int track, int tick, int staff, int verse, int syllabic, const char *text);
+/* Bar bar is played from a score's measure (from 0); -1 if out of memory. */
+int  gr_set_srcbar (gr_song *s, int bar, int measure);
+/* The time signature from bar on written as a symbol (gr_meter.symbol). */
+void gr_set_meter_symbol (gr_song *s, int bar, int symbol);
 
 /* Tempo: s->tempo at the start, then any changes (from a score or a MIDI
    file). Times are from tick 0. Changing the starting tempo
@@ -440,6 +601,9 @@ int  gr_score_import (gr_song *s, const char *path, int tick, const char **why);
    written as notation (note values, ties, rests, a key signature from the
    song's key). Returns 0, or -1. */
 int  gr_musicxml_export (const gr_song *s, const char *path);
+/* The same, with gr_notation_make_ex's flags (notation.h): the tests use
+   it to compare a score with the one it was imported from. */
+int  gr_musicxml_export_ex (const gr_song *s, const char *path, int flags);
 
 /* ---- names for the UI --------------------------------------------------- */
 const char *gr_patch_name (int patch);

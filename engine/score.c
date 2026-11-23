@@ -25,6 +25,7 @@ void gs_free (gs_score *sc)
       free (sc->parts[i].notes);
       free (sc->parts[i].pedals);
       free (sc->parts[i].marks);
+      free (sc->parts[i].lyrics);
     }
   free (sc->tempos);
   free (sc->parts);
@@ -61,6 +62,26 @@ static void to_latin1 (char *out, size_t n, const char *in)
         out[o++] = '-';
       else if (c == 0x2018 || c == 0x2019)
         out[o++] = '\'';
+      else if (c == 0x201C || c == 0x201D)
+        out[o++] = '"';
+      else if (c == 0x203F || c == 0x2040)
+        out[o++] = '_';                /* (an elision: two syllables on one note) */
+      else if ((c == 0x0153 || c == 0x0152) && o + 3 < n)
+        out[o++] = c == 0x0153 ? 'o' : 'O', out[o++] = c == 0x0153 ? 'e' : 'E';
+      else if (c >= 0x2000 && c <= 0x200A)
+        out[o++] = ' ';
+      else if (c == 0x2669 || c == 0xECA5 || c == 0xE1D5)
+        out[o++] = (char) GR_CH_NOTE4;   /* (a metronome mark's notes: Unicode's, SMuFL's) */
+      else if (c == 0x1D15E || c == 0xECA3 || c == 0xE1D3)
+        out[o++] = (char) GR_CH_NOTE2;
+      else if (c == 0x266A || c == 0xECA7 || c == 0xE1D7)
+        out[o++] = (char) GR_CH_NOTE8;
+      else if (c == 0x1D16D || c == 0xECB7 || c == 0xE1E7)
+        out[o++] = (char) GR_CH_NOTEDOT;
+      else if ((c >= 0x200B && c <= 0x200F) || c == 0x2060 || c == 0xFEFF || (c >= 0xE000 && c <= 0xF8FF))
+        ;                              /* (marks that take no room; a music font's symbols) */
+      else if (c == 0x2026 && o + 4 < n)
+        out[o++] = '.', out[o++] = '.', out[o++] = '.';
       else if (c < 0x20)
         out[o++] = ' ';
       else
@@ -78,6 +99,18 @@ gs_part *gs_add_part (gs_score *sc, const char *name)
   p = &sc->parts[sc->nparts++];
   memset (p, 0, sizeof *p);
   to_latin1 (p->name, sizeof p->name, name);
+  {
+    /* (on one line, without spaces either end: "Voice\n" is "Voice") */
+    char *c = p->name, *d = p->name;
+    size_t n;
+    while (*c == ' ' || *c == '\n' || *c == '\r' || *c == '\t')
+      c++;
+    for (; *c; c++)
+      *d++ = *c == '\n' || *c == '\r' || *c == '\t' ? ' ' : *c;
+    *d = 0;
+    for (n = strlen (p->name); n > 0 && p->name[n - 1] == ' '; n--)
+      p->name[n - 1] = 0;
+  }
   p->program = p->bank_msb = p->bank_lsb = p->channel = -1;
   return p;
 }
@@ -125,6 +158,33 @@ int gs_add_mark (gs_part *p, int measure, double off, int emeasure, double eoff,
   k->pitch = pitch;
   k->staff = staff;
   k->hi = pitch;
+  k->st = p->cur_staff;
+  return 0;
+}
+
+int gs_add_lyric (gs_part *p, int measure, double off, int staff, int verse, const char *syllabic, const char *text)
+{
+  gs_lyric *l;
+  if (!text || !*text)
+    return 0;
+  if (p->nlyrics == p->lyriccap)
+    {
+      int cap = p->lyriccap ? p->lyriccap * 2 : 64;
+      gs_lyric *a = realloc (p->lyrics, (size_t) cap * sizeof *a);
+      if (!a)
+        return -1;
+      p->lyrics = a;
+      p->lyriccap = cap;
+    }
+  l = &p->lyrics[p->nlyrics++];
+  l->measure = measure;
+  l->off = off;
+  l->staff = staff;
+  l->st = p->cur_staff;
+  l->verse = verse;
+  l->syllabic = !syllabic ? 0 : !strcmp (syllabic, "begin") ? 1 : !strcmp (syllabic, "middle") ? 2
+    : !strcmp (syllabic, "end") ? 3 : 0;
+  to_latin1 (l->text, sizeof l->text, text);
   return 0;
 }
 
@@ -146,6 +206,7 @@ int gs_add_tempo (gs_score *sc, int measure, double off, double bpm)
   sc->tempos[sc->ntempos].measure = measure;
   sc->tempos[sc->ntempos].off = off;
   sc->tempos[sc->ntempos].bpm = bpm;
+  sc->tempos[sc->ntempos].hidden = 0;
   sc->ntempos++;
   return 0;
 }
@@ -158,7 +219,7 @@ static int cmp_pctl (const void *a, const void *b)
   return x->value - y->value;   /* (up before down at the same moment) */
 }
 
-int gs_add_note (gs_part *p, int measure, double off, double len, int pitch, int vel, int tie)
+int gs_add_note (gs_part *p, int measure, double off, double len, int pitch, int vel, int tie, int wr)
 {
   gs_note *n;
   if (pitch < 0 || pitch > 127 || len <= 0)
@@ -173,12 +234,14 @@ int gs_add_note (gs_part *p, int measure, double off, double len, int pitch, int
       p->cap = cap;
     }
   n = &p->notes[p->n++];
+  n->st = p->cur_staff;
   n->measure = measure;
   n->off = off;
   n->len = len;
   n->pitch = pitch;
   n->vel = vel < 1 ? 1 : vel > 127 ? 127 : vel;
   n->tie = tie;
+  n->wr = wr;
   return 0;
 }
 
@@ -208,6 +271,7 @@ gs_measure *gs_measure_at (gs_score *sc, int i)
             /* A new measure carries on the time signature before it. */
             sc->meas[k].num = k ? sc->meas[k - 1].num : 4;
             sc->meas[k].den = k ? sc->meas[k - 1].den : 4;
+            sc->meas[k].timesym = k ? sc->meas[k - 1].timesym : 0;
             sc->meas[k].len = sc->meas[k].num * 4.0 / sc->meas[k].den;
           }
       sc->nmeas = i + 1;
@@ -215,29 +279,105 @@ gs_measure *gs_measure_at (gs_score *sc, int i)
   return &sc->meas[i];
 }
 
-/* The order the measures are played in, repeats and voltas played out.
-   Returns how many (in *order, to free), or -1. */
+void gs_measure_label (gs_measure *m, const char *label)
+{
+  if (m->nlabels < 6 && label && *label)
+    snprintf (m->labels[m->nlabels++], sizeof m->labels[0], "%s", label);
+}
+
+static int has_label (const gs_measure *m, const char *label)
+{
+  int k;
+  for (k = 0; k < m->nlabels; k++)
+    if (!strcmp (m->labels[k], label))
+      return 1;
+  return 0;
+}
+
+/* "start": the start of the section measure from is in. */
+static int find_label (const gs_score *sc, const char *label, int from)
+{
+  int i;
+  if (!strcmp (label, "start"))
+    {
+      for (i = from; i > 0 && !sc->meas[i - 1].section_end; i--)
+        ;
+      return i;
+    }
+  for (i = 0; i < sc->nmeas; i++)
+    if (has_label (&sc->meas[i], label))
+      return i;
+  return -1;
+}
+
+/* Is measure i in a volta group's last volta? (After a jump, with no
+   repeats, only the last is played.) */
+static int last_volta (const gs_score *sc, int i)
+{
+  unsigned e = sc->meas[i].endings;
+  while (i + 1 < sc->nmeas && sc->meas[i + 1].endings == e && !sc->meas[i].end_repeat)
+    i++;
+  return i + 1 >= sc->nmeas || !sc->meas[i + 1].endings;
+}
+
+/* More endings further on in this repeat (before a new one, or a new
+   section)? Then the passes go on through the bars between. */
+static int endings_ahead (const gs_score *sc, int k)
+{
+  for (; k < sc->nmeas && !sc->meas[k].start_repeat; k++)
+    {
+      if (sc->meas[k].endings)
+        return 1;
+      if (sc->meas[k].section_end)
+        break;
+    }
+  return 0;
+}
+
+/* The order the measures are played in, repeats, voltas and jumps (D.C.,
+   D.S., al Fine, al Coda) played out. Returns how many (in *order, to
+   free), or -1. */
 static int play_order (const gs_score *sc, int **order)
 {
   int cap = sc->nmeas * 2 + 16, n = 0, i = 0, start = 0, pass = 1, guard = 0;
+  int in_jump = 0, norep = 0;
+  const char *until = "", *cont = "";
   int *o = malloc ((size_t) cap * sizeof *o), *count = calloc ((size_t) sc->nmeas + 1, sizeof *count);
-  if (!o || !count)
+  char *jumped = calloc ((size_t) sc->nmeas + 1, 1);
+  if (!o || !count || !jumped)
     {
       free (o);
       free (count);
+      free (jumped);
       return -1;
     }
   while (i < sc->nmeas && guard++ < 100000)
     {
       const gs_measure *m = &sc->meas[i];
-      if (m->start_repeat && pass == 1)
-        start = i;
-      if (m->endings && pass <= 32 && !(m->endings & (1u << (pass - 1))))
+      if (i > 0 && sc->meas[i - 1].section_end && !in_jump)
         {
-          /* Not this time round: past this volta. On the last pass, the
-             volta that has no bit for it is skipped like the others. */
-          i++;
-          continue;
+          pass = 1;                  /* a new section: repeats start again */
+          start = i;
+        }
+      if (norep)
+        {
+          if (m->endings && !last_volta (sc, i))
+            {
+              i++;
+              continue;
+            }
+        }
+      else
+        {
+          if (m->start_repeat && pass == 1)
+            start = i;
+          if (m->endings && pass <= 32 && !(m->endings & (1u << (pass - 1))))
+            {
+              /* Not this time round: past this volta. On the last pass, the
+                 volta that has no bit for it is skipped like the others. */
+              i++;
+              continue;
+            }
         }
       if (n == cap)
         {
@@ -247,7 +387,9 @@ static int play_order (const gs_score *sc, int **order)
           o = a;
         }
       o[n++] = i;
-      if (m->end_repeat > 0)
+      if (norep)
+        ;
+      else if (m->end_repeat > 0)
         {
           if (++count[i] < m->end_repeat)
             {
@@ -264,16 +406,92 @@ static int play_order (const gs_score *sc, int **order)
               start = i + 1;
             }
         }
-      else if (m->endings && pass > 1 && (i + 1 >= sc->nmeas || !sc->meas[i + 1].endings))
+      else if (m->endings && pass > 1 && (i + 1 >= sc->nmeas || !sc->meas[i + 1].endings)
+               && !endings_ahead (sc, i + 1))
         {
           pass = 1;                  /* the last ending is over */
           start = i + 1;
         }
+      else if (m->endings && pass <= 32 && i + 1 < sc->nmeas && sc->meas[i + 1].endings
+               && sc->meas[i + 1].endings != m->endings)
+        {
+          /* An ending with no repeat of its own, other endings straight
+             after it: on at the next ending for this time round further
+             on (as MuseScore plays "1." "2." "3. Pour finir", then the
+             verse's own "1." and "2."), if there's one before a new
+             repeat or section. */
+          int j = i + 1, k;
+          while (j < sc->nmeas && sc->meas[j].endings)
+            j++;
+          for (k = j; k < sc->nmeas && !sc->meas[k].start_repeat && !sc->meas[k - 1].section_end; k++)
+            if (sc->meas[k].endings & (1u << (pass - 1)))
+              break;
+          if (k < sc->nmeas && (sc->meas[k].endings & (1u << (pass - 1)))
+              && !sc->meas[k].start_repeat && !sc->meas[k - 1].section_end)
+            {
+              i = k;
+              continue;
+            }
+        }
+      if (in_jump && *until && has_label (m, until))
+        {
+          /* Fine, or To Coda: on at the Coda, or the end. */
+          int j = *cont ? find_label (sc, cont, i) : -1;
+          if (j < 0)
+            {
+              /* The Fine ends its section: on at the next, if any. */
+              for (j = i; j < sc->nmeas && !sc->meas[j].section_end; j++)
+                ;
+              if (++j >= sc->nmeas)
+                break;
+            }
+          in_jump = norep = 0;
+          pass = 1;
+          /* (on at a bar in an ending: it's played, as the ending's last time) */
+          if (sc->meas[j].endings)
+            while (pass < 32 && (sc->meas[j].endings >> pass))
+              pass++;
+          start = i = j;
+          continue;
+        }
+      if (m->jump && !jumped[i])
+        {
+          int j = find_label (sc, m->jump_to, i);
+          jumped[i] = 1;
+          if (j >= 0)
+            {
+              in_jump = 1;
+              norep = !m->jump_repeats;
+              until = m->until;
+              cont = m->cont;
+              pass = 1;
+              start = i = j;
+              continue;
+            }
+        }
       i++;
     }
   free (count);
+  free (jumped);
   *order = o;
   return n;
+}
+
+/* Is t (quarters) where a measure starts? mstart is in order. */
+static int on_barline (const double *mstart, int n, double t)
+{
+  int lo = 0, hi = n - 1;
+  while (lo <= hi)
+    {
+      int mid = (lo + hi) / 2;
+      if (fabs (mstart[mid] - t) < 1.0 / 256)
+        return 1;
+      if (mstart[mid] < t)
+        lo = mid + 1;
+      else
+        hi = mid - 1;
+    }
+  return 0;
 }
 
 static int cmp_pnote (const void *a, const void *b)
@@ -284,7 +502,12 @@ static int cmp_pnote (const void *a, const void *b)
   return x->key - y->key;
 }
 
-typedef struct { double start, end; int pitch, vel, tie; } unote;
+typedef struct { double start, end, tie1; int pitch, vel, tie, wr, cont; } unote;   /* tie1: gr_note's, in quarters;
+                                                                               cont: its last ucont, or -1 */
+/* A tied note's continuation written in another voice (as a score can
+   tie a note into another voice): played as the note it's tied from,
+   written as a note of its own there (GR_MK_NOTE). */
+typedef struct { double start, end; int pitch, wr; } ucont;
 
 static int cmp_unote (const void *a, const void *b)
 {
@@ -294,8 +517,173 @@ static int cmp_unote (const void *a, const void *b)
   return x->pitch - y->pitch;
 }
 
+/* A part's staves in groups of one or two: an organ's manuals, then its
+   pedals; else each staff over the last two on its own, the last two
+   together (a piano's extra staff over its hands). Group of each staff,
+   and how many groups. */
+static int staff_groups (const gs_part *p, int nst, int *grp)
+{
+  int z, g = 0;
+  for (z = 0; z < nst; z++)
+    grp[z] = p->organ ? (z < 2 ? 0 : z - 1) : (z < nst - 2 ? z : nst - 2);
+  for (z = 0; z < nst; z++)
+    if (grp[z] + 1 > g)
+      g = grp[z] + 1;
+  return g;
+}
+
+static int part_staves (const gs_part *p)
+{
+  int n = 0, k;
+  for (k = 0; k < p->n; k++)
+    if (p->notes[k].st + 1 > n)
+      n = p->notes[k].st + 1;
+  for (k = 0; k < p->nmarks; k++)
+    if (p->marks[k].st + 1 > n)
+      n = p->marks[k].st + 1;
+  for (k = 0; k < GS_STAVES; k++)
+    if (p->clef[k] && k + 1 > n)
+      n = k + 1;
+  return n > GS_STAVES ? GS_STAVES : n;
+}
+
+int gs_split_staves (gs_score *sc)
+{
+  int i;
+  for (i = 0; i < sc->nparts; i++)
+    {
+      int nst = part_staves (&sc->parts[i]), grp[GS_STAVES], first[GS_STAVES + 1], ng, g, z, k;
+      gs_part *a;
+      if (nst < 3 || sc->parts[i].drums)
+        continue;
+      ng = staff_groups (&sc->parts[i], nst, grp);
+      for (z = nst - 1; z >= 0; z--)
+        first[grp[z]] = z;
+      /* room for the new parts, after this one */
+      if (!(a = realloc (sc->parts, (size_t) (sc->nparts + ng - 1) * sizeof *a)))
+        return -1;
+      sc->parts = a;
+      memmove (&a[i + ng], &a[i + 1], (size_t) (sc->nparts - i - 1) * sizeof *a);
+      sc->nparts += ng - 1;
+      for (g = 1; g < ng; g++)
+        {
+          gs_part *q = &a[i + g];
+          *q = a[i];
+          q->notes = NULL, q->n = q->cap = 0;
+          q->pedals = NULL, q->npedals = q->pedcap = 0;
+          q->marks = NULL, q->nmarks = q->markcap = 0;
+          q->lyrics = NULL, q->nlyrics = q->lyriccap = 0;
+          q->joined = a[i].organ && g == ng - 1 ? GR_JOIN_BARS : GR_JOIN_BRACE;
+          /* (each plays the pedal: shown under the last only) */
+          for (k = 0; k < a[i].npedals; k++)
+            if (gs_add_pedal (q, a[i].pedals[k].measure, a[i].pedals[k].off, a[i].pedals[k].down))
+              return -1;
+          if (g < ng - 1)
+            q->pedal_shown = 0, q->pedal_hidden = q->npedals;
+        }
+      if (ng > 1)
+        a[i].pedal_shown = 0, a[i].pedal_hidden = a[i].npedals;
+      /* each group's clefs */
+      {
+        int all[GS_STAVES];
+        memcpy (all, a[i].clef, sizeof all);
+        for (g = 0; g < ng; g++)
+          {
+            int c[GS_STAVES] = { 0 };
+            for (z = 0; z < nst; z++)
+              if (grp[z] == g)
+                c[z - first[g]] = all[z];
+            memcpy (a[i + g].clef, c, sizeof c);
+          }
+      }
+      /* the notes, marks and words to their group, on its staff there */
+      {
+        gs_part *p0 = &a[i];
+        int nn = 0, nm = 0, nl = 0;
+        for (k = 0; k < p0->n; k++)
+          {
+            gs_note x = p0->notes[k];
+            int st = x.st < 0 ? 0 : x.st >= nst ? nst - 1 : x.st, gg = grp[st], l = st - first[gg];
+            int two = gg + 1 < ng ? first[gg + 1] - first[gg] > 1 : nst - first[gg] > 1;
+            x.st = l;
+            x.wr = (x.wr & ~(GR_WR_STAFF | (two ? 0 : GR_WR_CROSS))) | (x.wr & GR_WR && l > 0 ? GR_WR_STAFF : 0);
+            if (gg == 0)
+              p0->notes[nn++] = x;
+            else
+              {
+                gs_part *q = &a[i + gg];
+                if (q->n == q->cap)
+                  {
+                    int cap = q->cap ? q->cap * 2 : 256;
+                    gs_note *b = realloc (q->notes, (size_t) cap * sizeof *b);
+                    if (!b)
+                      return -1;
+                    q->notes = b, q->cap = cap;
+                  }
+                q->notes[q->n++] = x;
+              }
+          }
+        p0->n = nn;
+        for (k = 0; k < p0->nmarks; k++)
+          {
+            gs_mark x = p0->marks[k];
+            int st = x.kind == GR_MK_NOPEDAL ? nst - 1 : x.st < 0 ? 0 : x.st >= nst ? nst - 1 : x.st, gg = grp[st], l = st - first[gg];
+            int two = gg + 1 < ng ? first[gg + 1] - first[gg] > 1 : nst - first[gg] > 1;
+            x.st = l;
+            if (x.kind == GR_MK_NOTE)
+              x.staff = (x.staff & ~(two ? 1 : 3)) | (l > 0);
+            else if (x.kind == GR_MK_ARPEGGIO || x.kind == GR_MK_TUPLET)
+              x.staff = (x.staff & ~1) | (l > 0);   /* (its line's length, its ratio, above) */
+            else if (x.staff >= 0)
+              x.staff = l;
+            if (gg == 0)
+              p0->marks[nm++] = x;
+            else
+              {
+                gs_part *q = &a[i + gg];
+                if (q->nmarks == q->markcap)
+                  {
+                    int cap = q->markcap ? q->markcap * 2 : 64;
+                    gs_mark *b = realloc (q->marks, (size_t) cap * sizeof *b);
+                    if (!b)
+                      return -1;
+                    q->marks = b, q->markcap = cap;
+                  }
+                q->marks[q->nmarks++] = x;
+              }
+          }
+        p0->nmarks = nm;
+        for (k = 0; k < p0->nlyrics; k++)
+          {
+            gs_lyric x = p0->lyrics[k];
+            int st = x.st < 0 ? 0 : x.st >= nst ? nst - 1 : x.st, gg = grp[st];
+            x.st = x.staff = st - first[gg];
+            if (gg == 0)
+              p0->lyrics[nl++] = x;
+            else
+              {
+                gs_part *q = &a[i + gg];
+                if (q->nlyrics == q->lyriccap)
+                  {
+                    int cap = q->lyriccap ? q->lyriccap * 2 : 64;
+                    gs_lyric *b = realloc (q->lyrics, (size_t) cap * sizeof *b);
+                    if (!b)
+                      return -1;
+                    q->lyrics = b, q->lyriccap = cap;
+                  }
+                q->lyrics[q->nlyrics++] = x;
+              }
+          }
+        p0->nlyrics = nl;
+      }
+      i += ng - 1;
+    }
+  return 0;
+}
+
 int gs_place (gr_song *s, gs_score *sc, int from, const char *kind, const char **why)
 {
+  int made_from = -2, joined = 0, member;
   static char msg[100];
   int *order = NULL, norder, i, made = 0, full_at = -1, dropped = 0, empty = gr_song_end (s) == 0;
   double *mstart;
@@ -306,6 +694,11 @@ int gs_place (gr_song *s, gs_score *sc, int from, const char *kind, const char *
       *why = msg;
       return -1;
     }
+  if (gs_split_staves (sc))
+    {
+      *why = "Not enough memory";
+      return -1;
+    }
   norder = play_order (sc, &order);
   if (norder <= 0 || !(mstart = malloc ((size_t) norder * sizeof *mstart)))
     {
@@ -313,7 +706,17 @@ int gs_place (gr_song *s, gs_score *sc, int from, const char *kind, const char *
       *why = "Not enough memory";
       return -1;
     }
+  /* A short first measure (a pickup) is written at the end of a whole
+     bar, as it's printed; every other measure starts a bar of its own. */
   mstart[0] = 0;
+  {
+    const gs_measure *m0 = &sc->meas[order[0]];
+    double full = m0->den > 0 ? m0->num * 4.0 / m0->den : 4;
+    if (m0->len > 0 && m0->len < full - 1e-9)
+      mstart[0] = full - m0->len;
+  }
+  if (empty && from == 0)
+    s->pickup = (int) floor (mstart[0] * GR_PPQ + 0.5);
   for (i = 1; i < norder; i++)
     mstart[i] = mstart[i - 1] + sc->meas[order[i - 1]].len;
 
@@ -327,26 +730,40 @@ int gs_place (gr_song *s, gs_score *sc, int from, const char *kind, const char *
   if (empty)
     {
       /* The score's time signatures, at the bars where they change. A
-         short measure (a pickup) still takes a whole bar of Groove's. */
-      int bar = 0, pn = 0, pd = 0;
-      double at = 0;
+         measure after the first that's shorter or longer than its time
+         signature (a bar of 2/4 in 3/4, where the music needs it) gets
+         one of its own. */
+      int bar = 0, pn = 0, pd = 0, pirreg = 0;
       for (i = 0; i < norder; i++)
         {
           const gs_measure *m = &sc->meas[order[i]];
-          int tk = from + (int) floor (at * GR_PPQ + 0.5);
-          bar = gr_tick_bar (s, tk);
-          if (m->num != pn || m->den != pd)
+          int num = m->num, den = m->den, irreg = 0;
+          if ((i > 0 || m->len > num * 4.0 / den) && den > 0 && fabs (m->len - num * 4.0 / den) > 1e-6 && m->len > 0)
             {
-              if (gr_bar_tick (s, bar) != tk)
-                bar++;
-              gr_set_meter (s, bar, m->num, m->den);
-              pn = m->num;
-              pd = m->den;
+              irreg = 1;
+              /* its length as a time signature: in its own beats if it can be */
+              for (den = m->den; den <= 64; den *= 2)
+                if (fabs (m->len * den / 4 - floor (m->len * den / 4 + 0.5)) < 1e-6)
+                  break;
+              num = (int) floor (m->len * den / 4 + 0.5);
+              if (den > 64 || num < 1)
+                num = m->num, den = m->den;
             }
-          at += m->len;
+          bar = gr_tick_bar (s, from + (int) floor ((i ? mstart[i] : 0) * GR_PPQ + 0.5));
+          if (num != pn || den != pd || (m->timesym && i > 0 && sc->meas[order[i - 1]].timesym != m->timesym)
+              || irreg != pirreg)
+            {
+              gr_set_meter (s, bar, num, den);
+              gr_set_meter_symbol (s, bar, irreg ? 3 : m->timesym);
+              pn = num;
+              pd = den;
+              pirreg = irreg;
+            }
         }
       if (sc->tempo > 0)
         s->tempo = sc->tempo < 40 ? 40 : sc->tempo > 240 ? 240 : (int) floor (sc->tempo + 0.5);
+      /* (whether the score writes a metronome mark for it) */
+      s->tempo_hidden = sc->ntempos == 0 || sc->tempos[0].hidden;   /* (none written: none shown) */
       /* Its tempo changes, played out with the repeats. */
       s->ntempos = 0;
       for (i = 0; i < norder; i++)
@@ -357,29 +774,93 @@ int gs_place (gr_song *s, gs_score *sc, int from, const char *kind, const char *
               {
                 int tk = from + (int) floor ((mstart[i] + sc->tempos[k].off) * GR_PPQ + 0.5);
                 if (fabs (gr_tempo_at (s, tk) - sc->tempos[k].bpm) > 0.01)
-                  gr_tempo_add (s, tk, sc->tempos[k].bpm);
+                  {
+                    int q;
+                    gr_tempo_add (s, tk, sc->tempos[k].bpm);
+                    for (q = 0; q < s->ntempos; q++)
+                      if (s->tempos[q].tick == tk)
+                        s->tempos[q].hidden = sc->tempos[k].hidden;
+                  }
               }
         }
+      /* Its key signatures (a score with none is in C). */
+      s->nkeysigs = 0;
+      {
+        int f = 0, mi = 0, set = 0;
+        for (i = 0; i < norder; i++)
+          {
+            const gs_measure *m = &sc->meas[order[i]];
+            int bar = gr_tick_bar (s, from + (int) floor (mstart[i] * GR_PPQ + 0.5));
+            if (m->has_key)
+              f = m->fifths, mi = m->minor;
+            if (!set || m->has_key)
+              {
+                if (!set || f != s->keysigs[s->nkeysigs - 1].fifths || mi != s->keysigs[s->nkeysigs - 1].minor)
+                  gr_set_keysig (s, bar, f, mi);
+                set = 1;
+              }
+          }
+        if (s->nkeysigs)
+          s->key = ((s->keysigs[0].fifths * 7 % 12 + 12) % 12 + (s->keysigs[0].minor ? 9 : 0)) % 12;
+      }
       while (s->ntracks)
         gr_track_delete (s, s->ntracks - 1);
+      s->nlyrics = 0;
+      s->nsrcbar = 0;
     }
+  /* Which measure each bar is played from (so the Score window writes
+     the score's repeats, and only those, as repeats). */
+  for (i = 0; i < norder; i++)
+    if (gr_set_srcbar (s, gr_tick_bar (s, from + (int) floor (mstart[i] * GR_PPQ + 0.5)), order[i]))
+      break;
 
+  /* A long score in few regions, so it all fits: bars to a region by how
+     many bars and parts it has and how many regions are free. */
+  {
+    int np = 0, nfree = 0, npfree = 0, bars, j;
+    for (i = 0; i < sc->nparts; i++)
+      np += sc->parts[i].n > 0;
+    for (j = 0; j < GR_MAX_REGIONS; j++)
+      nfree += !s->regions[j].used;
+    for (j = 0; j < GR_MAX_PATTERNS; j++)
+      npfree += !s->patterns[j].used;
+    if (npfree < nfree)
+      nfree = npfree;
+    bars = gr_tick_bar (s, from + (int) floor ((mstart[norder - 1] + sc->meas[order[norder - 1]].len) * GR_PPQ + 0.5))
+           - gr_tick_bar (s, from) + 1;
+    if (nfree > 16 && np > 0)
+      {
+        /* (room for busy bars that need regions of their own) */
+        long need = ((long) bars * np * 5 / 4 + nfree - 1) / nfree;
+        gr_place_chunk ((int) ((need + 3) / 4 * 4));
+      }
+  }
   for (i = 0; i < sc->nparts && full_at < 0; i++)
     {
       gs_part *p = &sc->parts[i];
       unote *u = NULL;
+      ucont *uc = NULL, *ts = NULL;   /* ts: ties after a long note's first, inside a bar */
       gr_pnote *pn = NULL;
-      int nu = 0, k, o, t, prog, last[128];
-      if (!p->n)
+      int nu = 0, nuc = 0, nts = 0, k, o, t, prog, last[128];
+      /* (an instrument's staff with nothing on it: kept, on a track of its own,
+         if it's joined to the rest of the instrument's) */
+      member = p->joined || (i + 1 < sc->nparts && sc->parts[i + 1].joined);
+      if (!p->n && !member)
         continue;
+      /* (it goes on from the part before it, if that made a track) */
+      joined = p->joined && i == made_from + 1 ? p->joined : GR_JOIN_NONE;
       /* Played out: each measure's notes, every time it's played. */
       for (o = 0; o < norder; o++)
         for (k = 0; k < p->n; k++)
           if (p->notes[k].measure == order[o])
             nu++;
-      if (!nu || !(u = malloc ((size_t) nu * sizeof *u)) || !(pn = malloc ((size_t) nu * sizeof *pn)))
+      if ((!nu && !member) || !(u = malloc ((size_t) (nu + 1) * sizeof *u)) || !(pn = malloc ((size_t) (nu + 1) * sizeof *pn))
+          || !(uc = malloc ((size_t) (nu + 1) * sizeof *uc)) || !(ts = malloc ((size_t) (nu + 1) * sizeof *ts)))
         {
           free (u);
+          free (pn);
+          free (uc);
+          free (ts);
           if (nu)
             {
               *why = "Not enough memory";
@@ -397,6 +878,9 @@ int gs_place (gr_song *s, gs_score *sc, int from, const char *kind, const char *
               u[nu].pitch = p->notes[k].pitch;
               u[nu].vel = p->notes[k].vel;
               u[nu].tie = p->notes[k].tie;
+              u[nu].wr = p->notes[k].wr;   /* (a drum's too: as the score writes it) */
+              u[nu].tie1 = 0;
+              u[nu].cont = -1;
               nu++;
             }
       qsort (u, (size_t) nu, sizeof *u, cmp_unote);
@@ -409,11 +893,66 @@ int gs_place (gr_song *s, gs_score *sc, int from, const char *kind, const char *
         for (k = 0; k < nu; k++)
           {
             int l = last[u[k].pitch];
-            if (l >= 0 && (u[l].tie & GS_TIE_FWD || u[k].tie & GS_TIE_BACK)
-                && fabs (u[l].end - u[k].start) < 1.0 / 64)
+            /* (a score's note is tied from one in its own voice, on its own
+               staff, moved there or not: look back for it if the last on the key is another's) */
+            if (l >= 0 && (u[k].wr & GR_WR)
+                && (u[l].wr & (GR_WR_VOICE | GR_WR_STAFF | GR_WR_CROSS)) != (u[k].wr & (GR_WR_VOICE | GR_WR_STAFF | GR_WR_CROSS)))
               {
+                int j;
+                for (j = w - 1; j >= 0 && j >= w - 64; j--)
+                  if (u[j].pitch == u[k].pitch
+                      && (u[j].wr & (GR_WR_VOICE | GR_WR_STAFF | GR_WR_CROSS)) == (u[k].wr & (GR_WR_VOICE | GR_WR_STAFF | GR_WR_CROSS))
+                      && fabs ((u[j].wr & GR_WR_HALF ? 2 * u[j].end - u[j].start : u[j].end) - u[k].start) < 1.0 / 64)
+                    break;
+                if (j >= 0 && j >= w - 64)
+                  l = j;
+              }
+            /* (where it ends as written: a staccato note plays for half that) */
+            double wend = l < 0 ? 0 : u[l].wr & GR_WR_HALF ? 2 * u[l].end - u[l].start : u[l].end;
+            /* A tie on to a later note, not the next (as from the notes of
+               an arpeggio to the chord they ring into): both written
+               tied, each played */
+            if (l >= 0 && (u[l].tie & GS_TIE_FWD) && (u[k].tie & GS_TIE_BACK) && (u[k].wr & GR_WR)
+                && wend < u[k].start - 1.0 / 64 && u[k].start - wend <= 4 && (u[l].tie1 == 0 || u[l].tie1 == GR_TIE_IN))
+              {
+                u[l].tie1 = u[l].tie1 == GR_TIE_IN ? GR_TIE_BOTH : GR_TIE_OUT;
+                u[l].tie &= ~GS_TIE_FWD;
+                u[k].tie1 = GR_TIE_IN;
+                u[k].tie &= ~GS_TIE_BACK;
+              }
+            if (l >= 0 && (u[l].tie & GS_TIE_FWD || u[k].tie & GS_TIE_BACK)
+                && fabs (wend - u[k].start) < 1.0 / 64)
+              {
+                /* (where the first is written to end; a tie at a barline
+                   needs no note of it, so the next one inside a bar) */
+                if (u[l].tie1 == 0 && !on_barline (mstart, norder, wend))
+                  u[l].tie1 = wend - u[l].start;
+                else if (u[l].tie1 > 0 && !on_barline (mstart, norder, wend) && u[l].cont < 0 && (u[l].wr & GR_WR) && nts < nu)
+                  {
+                    /* (a third note tied on, or more: where, as a mark) */
+                    ts[nts].start = wend;
+                    ts[nts].end = wend;
+                    ts[nts].pitch = u[l].pitch;
+                    ts[nts++].wr = u[l].wr;
+                  }
+                /* (tied on into another voice: written there from here) */
+                {
+                  int vmask = GR_WR_VOICE | GR_WR_STAFF | GR_WR_CROSS;
+                  int cw = u[l].cont >= 0 ? uc[u[l].cont].wr : u[l].wr;
+                  if ((u[l].wr & GR_WR) && (u[k].wr & GR_WR) && (cw & vmask) != (u[k].wr & vmask))
+                    {
+                      uc[nuc].start = u[k].start;
+                      uc[nuc].end = u[k].end;
+                      uc[nuc].pitch = u[k].pitch;
+                      uc[nuc].wr = u[k].wr;
+                      u[l].cont = nuc++;
+                    }
+                  else if (u[l].cont >= 0)
+                    uc[u[l].cont].end = u[k].end;
+                }
                 u[l].end = u[k].end;
                 u[l].tie = u[k].tie;
+                u[l].wr &= ~GR_WR_HALF;   /* (no longer half its whole length) */
                 continue;
               }
             u[w] = u[k];
@@ -430,6 +969,12 @@ int gs_place (gr_song *s, gs_score *sc, int from, const char *kind, const char *
             pn[k].end = pn[k].start + 1;
           pn[k].key = u[k].pitch;
           pn[k].vel = u[k].vel;
+          pn[k].wr = u[k].wr;
+          pn[k].tie1 = (int) floor ((u[k].start + u[k].tie1) * GR_PPQ + 0.5) - pn[k].start;
+          if (u[k].tie1 <= 0 || pn[k].tie1 <= 0 || pn[k].tie1 >= pn[k].end - pn[k].start)
+            pn[k].tie1 = 0;
+          if (u[k].tie1 < 0)
+            pn[k].tie1 = (int) u[k].tie1;      /* (GR_TIE_OUT, GR_TIE_IN: to or from a later or earlier note) */
         }
       free (u);
       qsort (pn, (size_t) nu, sizeof *pn, cmp_pnote);
@@ -443,13 +988,54 @@ int gs_place (gr_song *s, gs_score *sc, int from, const char *kind, const char *
                     GR_MAX_TRACKS);
           *why = msg;
           free (pn);
+          free (uc);
+          free (ts);
           break;
         }
       s->tracks[t].gm = p->drums ? 0 : prog;
+      if (!p->drums)
+        {
+          /* how the score writes it (else Groove goes by its sound) */
+          s->tracks[t].written = 1;
+          s->tracks[t].wtranspose = p->has_transpose ? p->transpose : 0;
+          s->tracks[t].wclef[0] = p->clef[0];
+          s->tracks[t].wclef[1] = p->clef[1];   /* (a third staff's: on a part of its own, joined) */
+          s->tracks[t].wpedal = p->pedal_hidden > 0 && p->pedal_shown == 0;
+          if (!p->has_transpose)
+            s->tracks[t].written = 2;     /* (its transposition's not known) */
+        }
+      s->tracks[t].joined = joined;
+      memcpy (s->tracks[t].drumline, p->drumline, sizeof p->drumline);
+      s->tracks[t].wlines = p->drums && p->lines == 1 ? 1 : 0;
+      made_from = i;
       s->tracks[t].channel = p->channel;
       s->tracks[t].bank_msb = p->bank_msb;
       s->tracks[t].bank_lsb = p->bank_lsb;
       made++;
+      /* (and the notes it writes but doesn't play, where it plays none: a
+         region for them to be written in) */
+      {
+        int na = 0;
+        gr_pnote *pa;
+        for (o = 0; o < norder; o++)
+          for (k = 0; k < p->nmarks; k++)
+            na += p->marks[k].measure == order[o] && p->marks[k].kind == GR_MK_NOTE;
+        if (na && (pa = realloc (pn, (size_t) (nu + na) * sizeof *pn)))
+          {
+            pn = pa;
+            for (o = 0; o < norder; o++)
+              for (k = 0; k < p->nmarks; k++)
+                if (p->marks[k].measure == order[o] && p->marks[k].kind == GR_MK_NOTE)
+                  {
+                    gr_pnote *x = &pn[nu++];
+                    memset (x, 0, sizeof *x);
+                    x->start = (int) floor ((mstart[o] + p->marks[k].off) * GR_PPQ + 0.5);
+                    x->end = x->start + 1;
+                    x->key = -1;
+                  }
+            qsort (pn, (size_t) nu, sizeof *pn, cmp_pnote);
+          }
+      }
       if (gr_place_notes (s, t, pn, nu, from, &full_at, &dropped))
         {
           snprintf (msg, sizeof msg, "The song is full: the %s was imported up to bar %d",
@@ -457,6 +1043,12 @@ int gs_place (gr_song *s, gs_score *sc, int from, const char *kind, const char *
           *why = msg;
         }
       free (pn);
+      /* The words, played out like the notes (each verse every time). */
+      for (o = 0; o < norder && full_at < 0; o++)
+        for (k = 0; k < p->nlyrics; k++)
+          if (p->lyrics[k].measure == order[o])
+            gr_lyric_add (s, t, from + (int) floor ((mstart[o] + p->lyrics[k].off) * GR_PPQ + 0.5),
+                          p->lyrics[k].staff, p->lyrics[k].verse, p->lyrics[k].syllabic, p->lyrics[k].text);
       /* The sustain pedal, played out like the notes, as controller 64. */
       if (p->npedals && full_at < 0)
         {
@@ -491,10 +1083,10 @@ int gs_place (gr_song *s, gs_score *sc, int from, const char *kind, const char *
         }
       /* The written marks, played out too: one that spans ends where its
          end is next played. */
-      if (p->nmarks && full_at < 0)
+      if ((p->nmarks || nuc || nts) && full_at < 0)
         {
           gr_pmark *pm;
-          int nm = 0;
+          int nm = nuc + nts;
           for (o = 0; o < norder; o++)
             for (k = 0; k < p->nmarks; k++)
               if (p->marks[k].measure == order[o])
@@ -524,11 +1116,34 @@ int gs_place (gr_song *s, gs_score *sc, int from, const char *kind, const char *
                     pm[nm].kind = g->kind;
                     pm[nm].value = g->value;
                     pm[nm].pitch = g->pitch;
-                    if (g->kind == GR_MK_ARPEGGIO)
-                      pm[nm].len = g->hi;      /* (its top note, for a chord spread) */
+                    if (g->kind == GR_MK_ARPEGGIO || g->kind == GR_MK_GRACE)
+                      pm[nm].len = g->hi;      /* (its top note, for a chord spread; a grace note's place) */
                     pm[nm].staff = g->staff;
                     nm++;
                   }
+              /* notes tied on into another voice: written there */
+              for (k = 0; k < nuc; k++)
+                {
+                  pm[nm].tick = (int) floor (uc[k].start * GR_PPQ + 0.5);
+                  pm[nm].len = (int) floor (uc[k].end * GR_PPQ + 0.5) - pm[nm].tick;
+                  pm[nm].kind = GR_MK_NOTE;
+                  pm[nm].value = (uc[k].wr & GR_WR_VOICE) | ((uc[k].wr >> 8) & 0x1f) << 2;
+                  pm[nm].pitch = uc[k].pitch;
+                  pm[nm].staff = gr_mknote_staff (uc[k].wr, 1);
+                  if (pm[nm].len > 0)
+                    nm++;
+                }
+              /* a long note's ties after its first, inside a bar */
+              for (k = 0; k < nts; k++)
+                {
+                  pm[nm].tick = (int) floor (ts[k].start * GR_PPQ + 0.5);
+                  pm[nm].len = 0;
+                  pm[nm].kind = GR_MK_TIE;
+                  pm[nm].value = ts[k].wr & GR_WR_VOICE;
+                  pm[nm].pitch = ts[k].pitch;
+                  pm[nm].staff = (ts[k].wr & GR_WR_STAFF) != 0;
+                  nm++;
+                }
               {
                 int lost = 0;     /* (a pattern full of marks: they're left out, not reported) */
                 gr_place_marks (s, t, pm, nm, from, &lost);
@@ -536,6 +1151,8 @@ int gs_place (gr_song *s, gs_score *sc, int from, const char *kind, const char *
               free (pm);
             }
         }
+      free (uc);
+      free (ts);
     }
   free (order);
   free (mstart);
@@ -549,6 +1166,7 @@ int gs_place (gr_song *s, gs_score *sc, int from, const char *kind, const char *
       snprintf (msg, sizeof msg, "That %s has no notes", kind);
       *why = msg;
     }
+  gr_place_chunk (0);
   return made ? made : -1;
 }
 

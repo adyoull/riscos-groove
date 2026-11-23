@@ -37,9 +37,20 @@ $(OUT)/ro/%.o: %.c $(HEADERS) | riscos-toolchain-present
 	@mkdir -p $(dir $@)
 	$(RO_CC) $(RISCOS_CFLAGS) -std=gnu99 -Wall -Wextra $(SM_INC) -c $< -o $@
 
-$(OUT)/groove: $(RO_OBJS) $(SM_RO_OBJS) riscos/handler.s
+# riscos-crossdev 1.13 or later: its UnixLib has word-aligned data. With
+# 1.12 and earlier, where some of UnixLib's data landed depended on the
+# program, and Groove 0.2 to 0.4.2 aborted at start-up on a machine with
+# alignment exceptions on. Refuse such a toolchain rather than build that.
+UNIXLIB_A := $(RISCOS_TOOLCHAIN)/arm-riscos-gnueabihf/lib/libunixlib.a
+$(OUT)/unixlib-aligned: $(UNIXLIB_A) tools/align-libs.py | riscos-toolchain-present
+	@mkdir -p $(OUT)
+	@python3 tools/align-libs.py --check $(UNIXLIB_A) || { echo "$(UNIXLIB_A): data not word-aligned; use riscos-crossdev 1.13 or later" >&2; exit 1; }
+	@touch $@
+
+$(OUT)/groove: $(RO_OBJS) $(SM_RO_OBJS) riscos/handler.s $(OUT)/unixlib-aligned
 	$(RO_CC) $(RISCOS_CFLAGS) $(RISCOS_LDFLAGS) -o $@ $(RO_OBJS) $(SM_RO_OBJS) riscos/handler.s -lpthread -lm
 
+# check-all.sh includes check-data-align.py from riscos-crossdev 1.13.
 checks: $(OUT)/groove
 	$(CHECK_ALL) $(OUT)/groove
 	$(CHECK_UNALIGNED) -Iengine -Iriscos $(SM_INC) $(ENGINE) $(RISCOS)
@@ -73,6 +84,14 @@ test: test-engine test-handler test-ui
 $(OUT)/test_engine: host/test_engine.c host/engrave_svg.c $(ENGINE) $(HEADERS) $(SOFTMIDI)
 	@mkdir -p $(OUT)
 	$(HOSTCC) $(HOST_CFLAGS) $(SM_INC) -o $@ host/test_engine.c host/engrave_svg.c $(ENGINE) $(SOFTMIDI) -lpthread -lm
+# A score file as the Score window would show it: out/render_score FILE OUT.svg
+$(OUT)/render_score: host/render_score.c host/engrave_svg.c $(ENGINE) $(HEADERS) $(SOFTMIDI)
+	@mkdir -p $(OUT)
+	$(HOSTCC) $(HOST_CFLAGS) $(SM_INC) -o $@ host/render_score.c host/engrave_svg.c $(ENGINE) $(SOFTMIDI) -lpthread -lm
+# (the same, optimised and without the sanitisers, for many scores at once)
+$(OUT)/render_fast: host/render_score.c host/engrave_svg.c $(ENGINE) $(HEADERS) $(SOFTMIDI)
+	@mkdir -p $(OUT)
+	$(HOSTCC) -std=gnu99 -O2 -g -D_DEFAULT_SOURCE $(SM_INC) -o $@ host/render_score.c host/engrave_svg.c $(ENGINE) $(SOFTMIDI) -lpthread -lm
 # The SoundFont tests use TimGM6mb (GPL-2; for the tests only, never
 # shipped), fetched from Ubuntu's package and checked by sha256.
 TEST_SF ?= $(OUT)/TimGM6mb.sf2

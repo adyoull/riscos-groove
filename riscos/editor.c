@@ -768,6 +768,8 @@ static void drag_note_len (int x, int y, int done)
   if (end - p->notes[drag_note].tick != p->notes[drag_note].len)
     {
       p->notes[drag_note].len = (int16_t) (end - p->notes[drag_note].tick);
+      p->notes[drag_note].wr &= (uint8_t) ~GR_WR_HALF;    /* (written as long as it plays now) */
+      p->notes[drag_note].tie1 = 0;
       edited ();
     }
   if (done && live_pitch >= 0)
@@ -786,7 +788,7 @@ static int move_n, move_tick, move_pitch, move_dt, move_dp;
 /* Put the selected notes back moved by dt ticks and dp semitones. */
 static void place_moved (gr_pattern *p, int dt, int dp)
 {
-  int i;
+  int i, k;
   *p = move_base;
   nsel = 0;
   for (i = 0; i < move_n; i++)
@@ -794,8 +796,13 @@ static void place_moved (gr_pattern *p, int dt, int dp)
       gr_note n = move_notes[i];
       n.tick = (int16_t) (n.tick + dt);
       n.pitch = (uint8_t) (n.pitch + dp);
-      if (gr_pattern_add_note (p, n.tick, n.len, n.pitch, n.vel) >= 0)
-        sel_add (&n);
+      if ((k = gr_pattern_add_note (p, n.tick, n.len, n.pitch, n.vel)) >= 0)
+        {
+          GR_NOTE_WRITTEN (&p->notes[k], &n);
+          if (dp)
+            p->notes[k].spell = 0;      /* (moved to another key: Groove spells it) */
+          sel_add (&n);
+        }
     }
 }
 
@@ -952,8 +959,12 @@ static void head_click (int *b, int wx)
           for (rep = old; rep < len; rep += old)
             {
               for (k = 0; k < n; k++)
-                gr_pattern_add_note (p, p->notes[k].tick + rep, p->notes[k].len,
-                                     p->notes[k].pitch, p->notes[k].vel);
+                {
+                  int at = gr_pattern_add_note (p, p->notes[k].tick + rep, p->notes[k].len,
+                                                p->notes[k].pitch, p->notes[k].vel);
+                  if (at >= 0)
+                    GR_NOTE_WRITTEN (&p->notes[at], &p->notes[k]);     /* (the copies go after the originals) */
+                }
               for (k = 0; k < nc; k++)
                 gr_pattern_set_ctl (p, p->ctls[k].tick + rep, p->ctls[k].type, p->ctls[k].value);
             }
@@ -1286,9 +1297,13 @@ int editor_key (int code)
         for (i = 0; i < note_clip_n; i++)
           {
             gr_note n = note_clip[i];
+            int w;
             n.tick = (int16_t) (n.tick + at);
-            if (gr_pattern_add_note (p, n.tick, n.len, n.pitch, n.vel) >= 0)
-              sel_add (&n);
+            if ((w = gr_pattern_add_note (p, n.tick, n.len, n.pitch, n.vel)) >= 0)
+              {
+                GR_NOTE_WRITTEN (&p->notes[w], &n);
+                sel_add (&n);
+              }
           }
         edited ();
         return 1;

@@ -52,7 +52,7 @@ static void demo_song (gr_song *s)
 
 static void test_loops (void)
 {
-  gr_song s;
+  static gr_song s;
   int i, k;
   gr_song_init (&s);
   for (i = 0; i < gr_loop_count (); i++)
@@ -1857,13 +1857,14 @@ static int track_note_list (const gr_song *s, int t, xnote *out, int max)
 static void test_score_import (void)
 {
   /* host/scores/repeats.*: a pickup, |: D E~ | E (F+A) triplet | 1. C :| 2. D (8va) | (grace) E + C below,
-     in 3/4. Played as MuseScore plays it: the repeat, then the second ending. */
+     in 3/4. Played as MuseScore plays it: the repeat, then the second ending. Its
+     pickup is the end of a whole bar (192 ticks of it left out). */
   static const xnote want[] = {
-    { 0, 72, 96, 45 }, { 96, 74, 96, 80 }, { 192, 76, 288, 80 }, { 480, 77, 96, 80 }, { 480, 81, 96, 80 },
-    { 576, 79, 32, 80 }, { 608, 81, 32, 80 }, { 640, 83, 32, 80 }, { 672, 84, 288, 80 },
-    { 960, 74, 96, 80 }, { 1056, 76, 288, 80 }, { 1344, 77, 96, 80 }, { 1344, 81, 96, 80 },
-    { 1440, 79, 32, 80 }, { 1472, 81, 32, 80 }, { 1504, 83, 32, 80 }, { 1536, 86, 288, 80 },
-    { 1824, 60, 288, 49 }, { 1824, 76, 192, 49 } };
+    { 192, 72, 96, 45 }, { 288, 74, 96, 80 }, { 384, 76, 288, 80 }, { 672, 77, 96, 80 }, { 672, 81, 96, 80 },
+    { 768, 79, 32, 80 }, { 800, 81, 32, 80 }, { 832, 83, 32, 80 }, { 864, 84, 288, 80 },
+    { 1152, 74, 96, 80 }, { 1248, 76, 288, 80 }, { 1536, 77, 96, 80 }, { 1536, 81, 96, 80 },
+    { 1632, 79, 32, 80 }, { 1664, 81, 32, 80 }, { 1696, 83, 32, 80 }, { 1728, 86, 288, 80 },
+    { 2016, 60, 288, 49 }, { 2016, 76, 192, 49 } };
   static const char *files[] = { "host/scores/repeats.musicxml", "host/scores/repeats.mxl",
                                  "host/scores/repeats-utf16.musicxml", "host/scores/repeats3.mscx",
                                  "host/scores/repeats3.mscz" };
@@ -1886,7 +1887,7 @@ static void test_score_import (void)
         continue;
       snprintf (what, sizeof what, "%s: it replaces the new song's empty tracks; its tempo and 3/4", files[f]);
       CHECK (s.ntracks == n && s.tempo == (mscore ? 120 : 100) && s.nmeters == 1 && s.meters[0].num == 3
-             && s.meters[0].den == 4, what);
+             && s.meters[0].den == 4 && s.pickup == 192, what);
       n = track_note_list (&s, 0, got, 64);
       ok = n == (int) (sizeof want / sizeof want[0]);
       for (k = 0; ok && k < n; k++)
@@ -1903,7 +1904,7 @@ static void test_score_import (void)
                  && s.tracks[1].gm == 71 && s.tracks[0].type == TRK_INST, what);
           n = track_note_list (&s, 1, got, 64);
           snprintf (what, sizeof what, "%s: a transposing part sounds where it should (B-flat clarinet: written D, heard C), in the repeat too", files[f]);
-          CHECK (n == 2 && got[0].tick == 96 && got[0].pitch == 72 && got[1].tick == 960 && got[1].pitch == 72, what);
+          CHECK (n == 2 && got[0].tick == 288 && got[0].pitch == 72 && got[1].tick == 1152 && got[1].pitch == 72, what);
         }
       else
         {
@@ -1914,15 +1915,20 @@ static void test_score_import (void)
     }
 
   /* MuseScore 2's own .mscz of repeats.musicxml (its voltas, ties and
-     tuplets are written differently again). */
+     tuplets are written differently again). MuseScore 2 keeps a note
+     under an 8va line at its written pitch, and MuseScore 4 reads it
+     that way (OpenScore's MuseScore 2 scores need it): so this file's
+     note under the 8va, saved at the pitch it sounds, is an octave up,
+     as MuseScore 4 plays it. */
   gr_song_init (&s);
   n = gr_score_import (&s, "host/scores/repeats2.mscz", 0, &why);
   CHECK (n == 2 && gr_score_kind ("host/scores/repeats2.mscz") == GR_SCORE_MSCZ, "MuseScore 2: a .mscz imports");
   n = track_note_list (&s, 0, got, 64);
   ok = n == (int) (sizeof want / sizeof want[0]);
   for (k = 0; ok && k < n; k++)
-    ok = got[k].tick == want[k].tick && got[k].pitch == want[k].pitch && got[k].len == want[k].len;
-  CHECK (ok, "MuseScore 2: the same notes, repeats, endings and ties");
+    ok = got[k].tick == want[k].tick && got[k].pitch == want[k].pitch + (want[k].tick == 1728 ? 12 : 0)
+         && got[k].len == want[k].len;
+  CHECK (ok, "MuseScore 2: the same notes, repeats, endings and ties (and the 8va as MuseScore 4 reads it)");
   n = track_note_list (&s, 1, got, 64);
   CHECK (n == 2 && got[0].pitch == 72, "MuseScore 2: the clarinet at concert pitch");
   gr_song_free (&s);
@@ -1948,7 +1954,8 @@ static void test_score_import (void)
   CHECK (n == 1 && s.ntracks == k + 1 && s.tempo == 110 && s.meters[0].num == 4,
          "into a song with music: a new track, the song's tempo and meter kept");
   n = track_note_list (&s, k, got, 64);
-  CHECK (n > 0 && got[0].tick == 4 * GR_BAR && got[0].pitch == 72, "it starts at the bar it was dropped on");
+  CHECK (n > 0 && got[0].tick == 4 * GR_BAR + 192 && got[0].pitch == 72 && s.pickup == 0,
+         "it starts at the bar it was dropped on (its pickup at the end of that bar)");
   gr_song_free (&s);
 
   /* MuseScore 4.2 and later: container.xml lists the style file (and the
@@ -2112,6 +2119,16 @@ static int count_kind (const gr_engraving *e, int kind, int glyph)
   return n;
 }
 
+/* Metronome marks drawn: a crotchet in a text (GR_CH_NOTE4). */
+static int count_met (const gr_engraving *e)
+{
+  int i, n = 0;
+  for (i = 0; i < e->n; i++)
+    if (e->it[i].kind == EK_TEXT && strchr (e->text + e->it[i].w, GR_CH_NOTE4))
+      n++;
+  return n;
+}
+
 /* Every bar has a box, in order, that bar_at finds; nothing is drawn
    outside the score. */
 static int engraving_sane (const gr_engraving *e, int bars)
@@ -2172,7 +2189,7 @@ static void test_engrave (void)
       if (e && t == 3)
         {
           CHECK (count_kind (e, EK_GLYPH, GL_G_CLEF) > 0 && count_kind (e, EK_BEAM, -1) > 0
-                 && count_kind (e, EK_GLYPH, GL_MET_QUARTER) == 1,
+                 && count_met (e) == 1,
                  "the tune on a treble staff, with beams, and a metronome mark");
           narrow = gr_engrave (nt, 0, 25 * EG_SP, NULL, s.tempo);
           CHECK (narrow && engraving_sane (narrow, 8) && narrow->height > e->height,
@@ -2272,7 +2289,7 @@ static void test_engrave (void)
     CHECK (gr_musicxml_export (&s, path) == 0, "MusicXML: a part played in exports");
     xml = (char *) slurp (path, &len);
     CHECK (xml && strstr (xml, "<slur type=\"start\"") && strstr (xml, "<slur type=\"stop\"")
-           && strstr (xml, "<staccato/>") && strstr (xml, "<accent/>") && strstr (xml, "release=\"-120\"")
+           && strstr (xml, "<staccato/>") && strstr (xml, "<accent/>") && strstr (xml, "release=\"-2520\"")
            && strstr (xml, "<dynamics><p/></dynamics>") && strstr (xml, "<dynamics><mf/></dynamics>"),
            "with its slur, staccato (and how short), accent and dynamics");
     free (xml);
@@ -2435,9 +2452,9 @@ static void test_engrave (void)
     CHECK (nt && nt->parts[0].fifths == 0 && nt->parts[0].transpose == 0, "or at concert pitch");
     gr_notation_free (nt);
     nt = gr_notation_make (&s, tk[1], 2);
-    CHECK (nt && nt->parts[0].clef[0] == NC_G8 && nt->parts[0].transpose == 12
-           && nt->hd[nt->ev[nt->parts[0].voice[0].first].head].octave == 4,
-           "Guitar: a treble clef with an 8 under it, written an octave up");
+    CHECK (nt && nt->parts[0].clef[0] == NC_G8 && nt->parts[0].transpose == 0
+           && nt->hd[nt->ev[nt->parts[0].voice[0].first].head].octave == 3,
+           "Guitar: a treble clef with an 8 under it (its notes shown an octave up), as MuseScore has it");
     gr_notation_free (nt);
     nt = gr_notation_make (&s, tk[2], 2);
     CHECK (nt && nt->parts[0].clef[0] == NC_C3, "Viola: the alto clef");
@@ -2887,7 +2904,7 @@ static void test_score_marks (void)
     }
   CHECK (ok, "Marks: slur, crescendo, p and f, spread chord, staccato and accent on the notes the score puts them");
   eg = nt ? gr_engrave (nt, 0, 70 * EG_SP, NULL, s.tempo) : NULL;
-  CHECK (eg && count_kind (eg, EK_GLYPH, GL_ARPEGGIATO) == 1 && count_kind (eg, EK_GLYPH, GL_MET_QUARTER) == 2
+  CHECK (eg && count_kind (eg, EK_GLYPH, GL_ARPEGGIATO) == 1 && count_met (eg) == 2
          && count_kind (eg, EK_SLUR, 0) >= 1 && count_kind (eg, EK_GLYPH, GL_OTTAVA_8VA) == 1,
          "Engraved: the spread chord's wavy line, two metronome marks, the slur and the 8va");
   gr_engraving_free (eg);
@@ -2950,7 +2967,7 @@ static void test_score_marks (void)
     eg = nt ? gr_engrave (nt, 0, 70 * EG_SP, NULL, s.tempo) : NULL;
     for (k = 0; eg && k < eg->n; k++)
       {
-        met += eg->it[k].kind == EK_GLYPH && eg->it[k].glyph == GL_MET_QUARTER;
+        met += eg->it[k].kind == EK_TEXT && strchr (eg->text + eg->it[k].w, GR_CH_NOTE4) != NULL;
         rests += eg->it[k].kind == EK_BEAM;          /* (a multi-bar rest's thick bar) */
       }
     (void) sy;
@@ -3067,6 +3084,493 @@ static void test_score_marks (void)
 #define SUB_FRAMES 64
 /* Notes start and stop on time, to the sample: notes on odd ticks, of odd
    lengths, at 117 bpm, sent to MIDI out, against when they should be. */
+/* A score written as the score writes it (host/scores/written.mscx): its
+   staves and voices, values, ties, spelling, key, clefs, pickup and
+   marks, rather than worked out again from the playing. */
+static void test_written (void)
+{
+  static gr_song s;
+  const char *why = NULL;
+  gr_notation *nt;
+  gr_engraving *e;
+  int n, ok;
+  gr_song_init (&s);
+  n = gr_score_import (&s, "host/scores/written.mscx", 0, &why);
+  CHECK (n == 1 && s.pickup == 288 && s.nkeysigs == 1 && s.keysigs[0].fifths == -3 && s.tracks[0].written == 1,
+         "Written: a pickup of a crotchet, three flats, how the part is written kept");
+  CHECK (s.nlyrics == 1 && !strcmp (s.lyrics[0].text, "Halle") && s.lyrics[0].tick == 384 && s.lyrics[0].syllabic == 1,
+         "its word (its italics' text too), under the first note of bar 1");
+  {
+    static gr_song b;
+    gr_song_init (&b);
+    CHECK (gr_song_save (&s, "/tmp/groove_test_written.groove") == 0 && gr_song_load (&b, "/tmp/groove_test_written.groove") == 0
+           && b.nlyrics == 1 && !strcmp (b.lyrics[0].text, "Halle") && b.pickup == 288 && b.nkeysigs == 1
+           && b.tracks[0].written == 1, "saved and loaded: the word, the pickup, the key, how it's written");
+    gr_song_free (&b);
+  }
+  nt = gr_notation_make (&s, 0, 1);
+  CHECK (nt && nt->nbars == 3 && nt->bars[0].pickup && nt->bars[0].len == 96 && nt->parts[0].staves == 2
+         && nt->parts[0].key[1] == -3, "the pickup a short bar, three bars, two staves, the key");
+  if (nt && nt->nbars == 3)
+    {
+      const gr_npart *p = &nt->parts[0];
+      const gr_nrange *v0 = &p->voice[1 * GR_NVOICES + 0], *v1 = &p->voice[1 * GR_NVOICES + 1];
+      const gr_nrange *b0 = &p->voice[1 * GR_NVOICES + GR_VPS], *t2 = &p->voice[2 * GR_NVOICES + 0];
+      const gr_nevent *ev = nt->ev;
+      ok = v0->n == 4
+        && ev[v0->first].value == NV_EIGHTH && (ev[v0->first].artic & NA_STACCATO)
+        && ev[v0->first + 1].start == 48 && ev[v0->first + 1].value == NV_QUARTER && !ev[v0->first + 1].dots
+        && (ev[v0->first + 1].artic & NA_TENUTO)
+        && ev[v0->first + 2].start == 144 && ev[v0->first + 2].ngrace == 1
+        && ev[v0->first + 3].start == 192 && ev[v0->first + 3].value == NV_HALF && ev[v0->first + 3].orn == NO_TRILL
+        && nt->hd[ev[v0->first + 3].head].step == 0 && nt->hd[ev[v0->first + 3].head].alter == -1;
+      CHECK (ok, "the right hand: a staccato quaver, a syncopated crotchet (tenuto), a grace note, C flat with a trill");
+      CHECK (v1->n == 1 && ev[v1->first].value == NV_WHOLE && nt->hd[ev[v1->first].head].pitch == 68,
+             "its second voice: a semibreve A flat");
+      CHECK (b0->n == 3 && ev[b0->first].value == NV_HALF && nt->hd[ev[b0->first].head].tie_start
+             && ev[b0->first + 1].value == NV_QUARTER && nt->hd[ev[b0->first + 1].head].tie_stop
+             && (ev[b0->first + 2].artic & NA_FERMATA),
+             "the left hand: a minim tied to a crotchet where the score ties them, a pause on the last");
+      CHECK (t2->n == 1 && nt->hd[ev[t2->first].head].step == 2 && nt->hd[ev[t2->first].head].alter == 1
+             && (ev[t2->first].artic & NA_FERMATA) && p->clefs[2 * 2 + 1] == NC_G && p->clefs[1 * 2 + 1] == NC_F,
+             "E sharp with a pause; the bass staff to the treble clef in the last bar");
+      e = gr_engrave (nt, 0, 70 * EG_SP, "Written", s.tempo);
+      CHECK (nt->nly == 1 && nt->ly[0].ev == v0->first, "the word under its note");
+      CHECK (e && engraving_sane (e, 3) && count_kind (e, EK_GLYPH, GL_FERMATA_ABOVE) == 2
+             && count_kind (e, EK_GLYPH, GL_TRILL) == 1 && count_kind (e, EK_GLYPH, GL_TENUTO_ABOVE) == 1,
+             "drawn: two pauses, the trill and the tenuto");
+      if (e)
+        gr_engraving_svg (e, "/tmp/groove_test_written.svg", 8, -1);
+      gr_engraving_free (e);
+    }
+  gr_notation_free (nt);
+  gr_song_free (&s);
+}
+
+/* Jumps (host/scores/jumps.*): D.C. al Fine to the start of its section,
+   D.S. al Coda, played out as MuseScore plays them; and measure repeats
+   (host/scores/mrepeat.mscx). */
+static void test_jumps (void)
+{
+  static gr_song s;
+  static const int mscx[] = { 60, 62, 64, 60, 62, 65, 67, 69, 65, 67, 71 }, mxml[] = { 60, 62, 64, 65, 62, 64, 67 };
+  static const int mrep[] = { 60, 62, 60, 62, 62 };
+  static const char *const file[] = { "host/scores/jumps.mscx", "host/scores/jumps.musicxml", "host/scores/mrepeat.mscx" };
+  static const char *const what[] = { "Jumps: MuseScore's D.C. al Fine in its section and D.S. al Coda, played out",
+                                      "Jumps: a MusicXML D.S. al Coda, played out",
+                                      "Measure repeats (of two measures, then one), played out" };
+  const char *why = NULL;
+  int k, b, ok;
+  for (k = 0; k < 3; k++)
+    {
+      const int *want = k == 2 ? mrep : k ? mxml : mscx, nw = k == 2 ? 5 : k ? 7 : 11;
+      gr_song_init (&s);
+      ok = gr_score_import (&s, file[k], 0, &why) == 1;
+      for (b = 0; b < nw && ok; b++)
+        {
+          int r, found = 0;
+          for (r = 0; r < GR_MAX_REGIONS; r++)
+            if (s.regions[r].used && s.regions[r].start <= b * GR_BAR && s.regions[r].start + s.regions[r].len > b * GR_BAR)
+              {
+                const gr_pattern *p = &s.patterns[s.regions[r].pattern];
+                int q;
+                for (q = 0; q < p->nnotes; q++)
+                  found |= s.regions[r].start + p->notes[q].tick == b * GR_BAR && p->notes[q].pitch == want[b];
+              }
+          ok = found;
+        }
+      ok = ok && gr_song_end (&s) <= nw * GR_BAR;
+      CHECK (ok, what[k]);
+      gr_song_free (&s);
+    }
+}
+
+/* A head of pitch p in bar b, voice z (staff 0) of part 0: its tie flags
+   (1 start, 2 stop), or -1 if there's none. */
+static int head_ties (const gr_notation *nt, int b, int z, int p)
+{
+  const gr_nrange *r = &nt->parts[0].voice[b * GR_NVOICES + z];
+  int k, h;
+  for (k = 0; k < r->n; k++)
+    {
+      const gr_nevent *e = &nt->ev[r->first + k];
+      for (h = 0; e->kind == NE_NOTE && h < e->nheads; h++)
+        if (nt->hd[e->head + h].pitch == p)
+          return nt->hd[e->head + h].tie_start | nt->hd[e->head + h].tie_stop << 1;
+    }
+  return -1;
+}
+
+/* Ties MuseScore allows between voices and over other notes, and a note
+   shown but not played (host/scores/ties2.mscx). */
+/* A tempo written as words only ("Andante"): played, but no metronome mark drawn. */
+static void test_tempo_words (void)
+{
+  static gr_song s;
+  const char *why = NULL;
+  FILE *in = fopen ("host/scores/marks.mscx", "rb"), *out;
+  char buf[65536];
+  size_t n;
+  char *at;
+  int k, shown = 0, hid = 0;
+  if (!in)
+    {
+      CHECK (0, "Tempo words: the test score opens");
+      return;
+    }
+  n = fread (buf, 1, sizeof buf - 1, in);
+  fclose (in);
+  buf[n] = 0;
+  gr_song_init (&s);
+  CHECK (gr_score_import (&s, "host/scores/marks.mscx", 0, &why) == 1 && !s.tempo_hidden,
+         "Tempo: a metronome mark written is shown");
+  gr_song_free (&s);
+  at = strstr (buf, "<sym>metNoteQuarterUp</sym> = 100");
+  CHECK (at != NULL, "Tempo words: the mark to change is there");
+  if (!at)
+    return;
+  memcpy (at, "Andante          ", 17);
+  memmove (at + 17, at + 33, strlen (at + 33) + 1);
+  out = fopen ("/tmp/gr_tempo_words.mscx", "wb");
+  if (out)
+    {
+      fputs (buf, out);
+      fclose (out);
+    }
+  gr_song_init (&s);
+  CHECK (gr_score_import (&s, "/tmp/gr_tempo_words.mscx", 0, &why) == 1 && s.tempo_hidden && s.tempo == 100,
+         "Tempo words: played at its tempo, no metronome mark at the start");
+  for (k = 0; k < s.ntempos; k++)
+    {
+      shown += !s.tempos[k].hidden;
+      hid += s.tempos[k].hidden;
+    }
+  CHECK (shown >= 1 && hid == 0, "Tempo words: the later written mark still shown");
+  CHECK (gr_song_save (&s, "/tmp/gr_tempo_words.groove") == 0, "Tempo words: saved");
+  gr_song_free (&s);
+  gr_song_init (&s);
+  CHECK (gr_song_load (&s, "/tmp/gr_tempo_words.groove") == 0 && s.tempo_hidden, "Tempo words: kept hidden through save and load");
+  gr_tempo_base (&s, 90);
+  CHECK (!s.tempo_hidden, "Tempo words: a tempo set by hand is shown");
+  gr_song_free (&s);
+  remove ("/tmp/gr_tempo_words.mscx");
+  remove ("/tmp/gr_tempo_words.groove");
+}
+
+/* A part on three staves: tracks of one and two staves, joined (one brace,
+   bar lines through, the name once); an organ's pedals apart. */
+static void test_staves3 (void)
+{
+  static gr_song s;
+  const char *why = NULL;
+  gr_notation *nt;
+  gr_engraving *eg;
+  int n;
+  gr_song_init (&s);
+  n = gr_score_import (&s, "host/scores/staves3.mscx", 0, &why);
+  CHECK (n == 4 && s.ntracks == 4, "Three staves: a piano and an organ on two tracks each");
+  CHECK (s.ntracks == 4 && !s.tracks[0].joined && s.tracks[1].joined == GR_JOIN_BRACE
+         && !s.tracks[2].joined && s.tracks[3].joined == GR_JOIN_BARS,
+         "Three staves: the piano's two braced together; the organ's pedals joined by bar lines");
+  CHECK (s.ntracks == 4 && s.tracks[1].wclef[1] == NC_F + 1 && s.tracks[2].wclef[1] == NC_F + 1
+         && s.tracks[3].wclef[0] == NC_F + 1, "Three staves: each staff's clef");
+  nt = gr_notation_make (&s, 1, 1);
+  CHECK (nt && nt->nparts == 2 && nt->parts[0].staves == 1 && nt->parts[1].staves == 2,
+         "Three staves: the piano's part, from either track, on all three staves");
+  eg = nt ? gr_engrave (nt, 0, 70 * EG_SP, NULL, s.tempo) : NULL;
+  gr_engraving_free (eg);
+  {
+    int parts[2] = { 0, 1 };
+    eg = nt ? gr_engrave_parts (nt, parts, 2, 70 * EG_SP, NULL, s.tempo, 0) : NULL;
+    CHECK (eg && count_kind (eg, EK_GLYPH, GL_BRACE) == 1, "Three staves: one brace over the three");
+    gr_engraving_free (eg);
+  }
+  gr_notation_free (nt);
+  nt = gr_notation_make (&s, -1, 1);
+  {
+    int parts[4] = { 0, 1, 2, 3 };
+    eg = nt ? gr_engrave_parts (nt, parts, 4, 70 * EG_SP, NULL, s.tempo, 0) : NULL;
+    CHECK (eg && count_kind (eg, EK_GLYPH, GL_BRACE) == 2, "Three staves: the organ's brace over its manuals only");
+    gr_engraving_free (eg);
+  }
+  gr_notation_free (nt);
+  CHECK (gr_musicxml_export_ex (&s, "/tmp/gr_staves3.musicxml", 0) == 0, "Three staves: exported");
+  {
+    FILE *f = fopen ("/tmp/gr_staves3.musicxml", "rb");
+    char buf[200000];
+    size_t m = f ? fread (buf, 1, sizeof buf - 1, f) : 0;
+    int parts = 0;
+    char *c;
+    if (f)
+      fclose (f);
+    buf[m] = 0;
+    for (c = buf; (c = strstr (c, "<part id=")); c++)
+      parts++;
+    CHECK (parts == 2 && strstr (buf, "<staves>3</staves>") && strstr (buf, "<staff>3</staff>"),
+           "Three staves: exported as two parts of three staves");
+    remove ("/tmp/gr_staves3.musicxml");
+  }
+  CHECK (gr_song_save (&s, "/tmp/gr_staves3.groove") == 0, "Three staves: saved");
+  gr_song_free (&s);
+  gr_song_init (&s);
+  CHECK (gr_song_load (&s, "/tmp/gr_staves3.groove") == 0 && s.ntracks == 4 && s.tracks[1].joined == GR_JOIN_BRACE
+         && s.tracks[3].joined == GR_JOIN_BARS, "Three staves: still joined when loaded");
+  gr_track_move (&s, 1, 3);
+  CHECK (!s.tracks[1].joined && !s.tracks[3].joined, "Three staves: a track moved away is on its own");
+  gr_song_free (&s);
+  remove ("/tmp/gr_staves3.groove");
+}
+
+/* Marks the score places: a voice's dynamic and hairpin over its staff, a
+   stem it turns down, a spread through both of a piano's staves, a pedal
+   it hides. */
+static void test_marks2 (void)
+{
+  static gr_song s;
+  const char *why = NULL;
+  gr_notation *nt;
+  int n, k, dyn_up = 0, hp_up = 0, stem_down = 0, span = 0, spanned = 0, ped_shown = 0, ped_hidden = 0;
+  gr_song_init (&s);
+  n = gr_score_import (&s, "host/scores/marks2.mscx", 0, &why);
+  CHECK (n == 2, "Placed marks: the test score imports");
+  nt = n == 2 ? gr_notation_make (&s, -1, 1) : NULL;
+  CHECK (nt && nt->nparts == 2, "Placed marks: written out");
+  if (nt && nt->nparts == 2)
+    {
+      for (k = 0; k < nt->nev; k++)
+        {
+          const gr_nevent *e = &nt->ev[k];
+          dyn_up += e->dyn && (e->wedge & NW_DYN_ABOVE);
+          hp_up += (e->wedge & NW_CRESC) && (e->wedge & NW_ABOVE);
+          stem_down += e->stem == 2;
+          span += (e->artic & NA_ARP_SPAN) != 0;
+          spanned += (e->artic & NA_ARP_SPANNED) != 0;
+        }
+      for (k = 0; k < nt->parts[1].npedal; k++)
+        {
+          ped_shown += !nt->parts[1].pedal[k].hidden;
+          ped_hidden += nt->parts[1].pedal[k].hidden;
+        }
+    }
+  CHECK (dyn_up == 1 && hp_up == 1, "Placed marks: a voice's dynamic and hairpin over its staff");
+  CHECK (stem_down == 1, "Placed marks: the stem the score turns down");
+  CHECK (span == 1 && spanned == 1, "Placed marks: one spread line through both staves");
+  CHECK (ped_shown == 2 && ped_hidden == 2, "Placed marks: the pedal shown, then the one it hides not");
+  {
+    int q, con = 0;
+    for (q = 0; q < s.nlyrics; q++)
+      con += s.lyrics[q].verse == GR_TEXT_PEDAL && !strcmp (s.lyrics[q].text, "con");
+    CHECK (con == 1, "Placed marks: the pedal's words (\"con\" Ped.)");
+    for (q = 0, con = 0; q < s.nlyrics; q++)
+      con += s.lyrics[q].verse == GR_TEXT_ABOVE && !strcmp (s.lyrics[q].text, "Vite (inquiet)");
+    CHECK (con == 1, "Placed marks: words part bold in their order, one space between");
+  }
+  gr_notation_free (nt);
+  gr_song_free (&s);
+}
+
+/* A MusicXML spread chord written on both staves, placed the same (as
+   MuseScore writes one through both): one line. */
+static void test_arp_xml (void)
+{
+  static gr_song s;
+  const char *why = NULL;
+  gr_notation *nt;
+  FILE *f = fopen ("/tmp/gr_arp.musicxml", "wb");
+  int k, span = 0, spanned = 0, n;
+  if (f)
+    {
+      fputs ("<?xml version=\"1.0\"?><score-partwise><part-list><score-part id=\"P1\"><part-name>Piano</part-name>"
+             "</score-part></part-list><part id=\"P1\"><measure number=\"1\"><attributes><divisions>1</divisions>"
+             "<time><beats>4</beats><beat-type>4</beat-type></time><staves>2</staves>"
+             "<clef number=\"1\"><sign>G</sign><line>2</line></clef><clef number=\"2\"><sign>F</sign><line>4</line></clef></attributes>"
+             "<note><pitch><step>C</step><octave>5</octave></pitch><duration>4</duration><voice>1</voice><type>whole</type><staff>1</staff>"
+             "<notations><arpeggiate number=\"1\" default-x=\"-10\"/></notations></note>"
+             "<note><chord/><pitch><step>E</step><octave>5</octave></pitch><duration>4</duration><voice>1</voice><type>whole</type><staff>1</staff>"
+             "<notations><arpeggiate number=\"1\" default-x=\"-10\"/></notations></note>"
+             "<backup><duration>4</duration></backup>"
+             "<note><pitch><step>C</step><octave>3</octave></pitch><duration>4</duration><voice>5</voice><type>whole</type><staff>2</staff>"
+             "<notations><arpeggiate number=\"1\" default-x=\"-10\"/></notations></note>"
+             "</measure></part></score-partwise>\n", f);
+      fclose (f);
+    }
+  gr_song_init (&s);
+  n = gr_score_import (&s, "/tmp/gr_arp.musicxml", 0, &why);
+  nt = n == 1 ? gr_notation_make (&s, -1, 1) : NULL;
+  for (k = 0; nt && k < nt->nev; k++)
+    {
+      span += (nt->ev[k].artic & NA_ARP_SPAN) != 0;
+      spanned += (nt->ev[k].artic & NA_ARP_SPANNED) != 0;
+    }
+  CHECK (nt && span == 1 && spanned == 1, "MusicXML spread through both staves: one line");
+  gr_notation_free (nt);
+  gr_song_free (&s);
+  remove ("/tmp/gr_arp.musicxml");
+}
+
+/* A MusicXML part with a shorter time signature of its own (a voice's
+   4/4 over the piano's 12/8, as MuseScore exports a staff's own):
+   stretched to fill the bar, its minims a dotted minim each. */
+static void test_own_time (void)
+{
+  static gr_song s;
+  const char *why = NULL;
+  int n, k, i, ons[8], no = 0;
+  FILE *f = fopen ("/tmp/gr_owntime.musicxml", "wb");
+  if (f)
+    {
+      fputs ("<?xml version=\"1.0\"?><score-partwise><part-list><score-part id=\"P1\"><part-name>Voice</part-name></score-part>"
+             "<score-part id=\"P2\"><part-name>Piano</part-name></score-part></part-list>"
+             "<part id=\"P1\"><measure number=\"1\"><attributes><divisions>2</divisions><time><beats>4</beats><beat-type>4</beat-type></time>"
+             "<clef><sign>G</sign><line>2</line></clef></attributes>"
+             "<note><pitch><step>C</step><octave>5</octave></pitch><duration>4</duration><voice>1</voice><type>half</type></note>"
+             "<note><pitch><step>D</step><octave>5</octave></pitch><duration>4</duration><voice>1</voice><type>half</type></note>"
+             "</measure></part><part id=\"P2\"><measure number=\"1\"><attributes><divisions>2</divisions>"
+             "<time><beats>12</beats><beat-type>8</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes>"
+             "<note><pitch><step>C</step><octave>4</octave></pitch><duration>12</duration><voice>1</voice><type>whole</type><dot/></note>"
+             "</measure></part></score-partwise>\n", f);
+      fclose (f);
+    }
+  gr_song_init (&s);
+  n = gr_score_import (&s, "/tmp/gr_owntime.musicxml", 0, &why);
+  for (k = 0; n >= 1 && k < GR_MAX_REGIONS; k++)
+    if (s.regions[k].used && s.regions[k].track == 0 && s.regions[k].clip < 0)
+      for (i = 0; i < s.patterns[s.regions[k].pattern].nnotes && no < 8; i++)
+        ons[no++] = s.regions[k].start + s.patterns[s.regions[k].pattern].notes[i].tick;
+  CHECK (no == 2 && ons[1] - ons[0] == 3 * GR_PPQ && s.meters[0].num == 12 && s.meters[0].den == 8,
+         "MusicXML: a part's own shorter time signature stretched to the bar (4/4 over 12/8)");
+  gr_song_free (&s);
+  remove ("/tmp/gr_owntime.musicxml");
+}
+
+/* A score's own tuplet, seven semiquavers in the time of six from the
+   bar's second quaver: written so, under one bracket, as it says. */
+static void test_tuplet_own (void)
+{
+  static gr_song s;
+  const char *why = NULL;
+  gr_notation *nt;
+  int i, k, n = 0, sev = 0, starts = 0, ends = 0;
+  FILE *f = fopen ("/tmp/gr_tup7.musicxml", "wb");
+  if (f)
+    {
+      fputs ("<?xml version=\"1.0\"?><score-partwise><part-list><score-part id=\"P1\"><part-name>Flute</part-name>"
+             "</score-part></part-list><part id=\"P1\"><measure number=\"1\"><attributes><divisions>28</divisions>"
+             "<time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes>"
+             "<note><pitch><step>C</step><octave>5</octave></pitch><duration>14</duration><voice>1</voice><type>eighth</type></note>", f);
+      for (i = 0; i < 7; i++)
+        fprintf (f, "<note><pitch><step>%c</step><octave>5</octave></pitch><duration>6</duration><voice>1</voice><type>16th</type>"
+                 "<time-modification><actual-notes>7</actual-notes><normal-notes>6</normal-notes></time-modification>%s</note>",
+                 "DEFGABC"[i], i == 0 ? "<notations><tuplet type=\"start\"/></notations>" : i == 6 ? "<notations><tuplet type=\"stop\"/></notations>" : "");
+      fputs ("<note><pitch><step>C</step><octave>5</octave></pitch><duration>56</duration><voice>1</voice><type>half</type></note>"
+             "</measure></part></score-partwise>\n", f);
+      fclose (f);
+    }
+  gr_song_init (&s);
+  n = gr_score_import (&s, "/tmp/gr_tup7.musicxml", 0, &why);
+  nt = n == 1 ? gr_notation_make (&s, -1, 1) : NULL;
+  for (k = 0; nt && k < nt->nev; k++)
+    if (nt->ev[k].kind == NE_NOTE && nt->ev[k].tuplet)
+      {
+        sev += nt->ev[k].tup_n == 7 && nt->ev[k].tup_m == 6 && nt->ev[k].value == NV_16TH && !nt->ev[k].dots;
+        starts += (nt->ev[k].tuplet & 2) != 0;
+        ends += (nt->ev[k].tuplet & 4) != 0;
+      }
+  CHECK (sev == 7 && starts == 1 && ends == 1, "A score's 7:6 tuplet off the beat: seven semiquavers under one bracket");
+  gr_notation_free (nt);
+  gr_song_free (&s);
+  remove ("/tmp/gr_tup7.musicxml");
+}
+
+/* Endings with no repeats of their own, others straight after (a
+   song's "1." "2." "3. Pour finir"), then the verse's own "1." and "2."
+   with repeats: played as MuseScore plays them. */
+static void test_endings_on (void)
+{
+  static gr_song s;
+  const char *why = NULL;
+  static const char *const step = "CDEFGAB";
+  static const char *const ends[] = { "", "1", "2", "3", "", "1", "2" };
+  int want[] = { 60, 62, 69, 60, 64, 71, 60, 65, 67 }, got[32], at[32], ng = 0, i, k, ok;
+  FILE *f = fopen ("/tmp/gr_endings.musicxml", "wb");
+  if (f)
+    {
+      fputs ("<?xml version=\"1.0\"?><score-partwise><part-list><score-part id=\"P1\"><part-name>Flute</part-name>"
+             "</score-part></part-list><part id=\"P1\">", f);
+      for (i = 0; i < 7; i++)
+        {
+          fprintf (f, "<measure number=\"%d\">", i + 1);
+          if (!i)
+            fputs ("<attributes><divisions>1</divisions><time><beats>4</beats><beat-type>4</beat-type></time>"
+                   "<clef><sign>G</sign><line>2</line></clef></attributes>", f);
+          if (*ends[i])
+            fprintf (f, "<barline location=\"left\"><ending number=\"%s\" type=\"start\"/></barline>", ends[i]);
+          fprintf (f, "<note><pitch><step>%c</step><octave>4</octave></pitch><duration>4</duration><voice>1</voice><type>whole</type></note>",
+                   step[i]);
+          if (*ends[i])
+            fprintf (f, "<barline location=\"right\"><ending number=\"%s\" type=\"stop\"/>%s</barline>", ends[i],
+                     i >= 5 ? "<repeat direction=\"backward\"/>" : "");
+          fputs ("</measure>", f);
+        }
+      fputs ("</part></score-partwise>\n", f);
+      fclose (f);
+    }
+  gr_song_init (&s);
+  if (gr_score_import (&s, "/tmp/gr_endings.musicxml", 0, &why) >= 1)
+    for (k = 0; k < GR_MAX_REGIONS; k++)
+      if (s.regions[k].used && s.regions[k].clip < 0)
+        {
+          const gr_pattern *pt = &s.patterns[s.regions[k].pattern];
+          for (i = 0; i < pt->nnotes && ng < 32; i++)
+            {
+              int t = s.regions[k].start + pt->notes[i].tick, j = ng++;
+              while (j > 0 && at[j - 1] > t)
+                {
+                  at[j] = at[j - 1];
+                  got[j] = got[j - 1];
+                  j--;
+                }
+              at[j] = t;
+              got[j] = pt->notes[i].pitch;
+            }
+        }
+  ok = ng == 9;
+  for (i = 0; ok && i < 9; i++)
+    ok = got[i] == want[i];
+  CHECK (ok, "Endings with none of their own repeats, then the verse's: played as MuseScore plays them");
+  gr_song_free (&s);
+  remove ("/tmp/gr_endings.musicxml");
+}
+
+static void test_ties2 (void)
+{
+  static gr_song s;
+  const char *why = NULL;
+  gr_notation *nt;
+  gr_song_init (&s);
+  CHECK (gr_score_import (&s, "host/scores/ties2.mscx", 0, &why) == 1, "Ties: the test score imports");
+  nt = gr_notation_make (&s, 0, 1);
+  CHECK (nt && nt->nbars == 3 && head_ties (nt, 0, 0, 50) == 1 && head_ties (nt, 1, 1, 50) == 2 && head_ties (nt, 1, 0, 50) == -1,
+         "a semibreve tied into the other voice: tied from the first voice, to the second");
+  CHECK (nt && nt->nbars == 3 && head_ties (nt, 2, 0, 48) >= 0 && (head_ties (nt, 2, 0, 48) & 1),
+         "a triplet quaver tied over two notes to a crotchet: tied");
+  CHECK (nt && nt->nbars == 3 && head_ties (nt, 2, 1, 57) == 0, "a note shown but not played: written, in its voice");
+  {
+    int r, played = 0;
+    for (r = 0; r < GR_MAX_REGIONS; r++)
+      if (s.regions[r].used)
+        {
+          const gr_pattern *pt = &s.patterns[s.regions[r].pattern];
+          int q;
+          for (q = 0; q < pt->nnotes; q++)
+            played += pt->notes[q].pitch == 57 || pt->notes[q].pitch == 48;
+        }
+    CHECK (played == 2, "the cue note not played; both tied Cs played");
+  }
+  gr_notation_free (nt);
+  gr_song_free (&s);
+}
+
 static void test_timing (void)
 {
   static gr_song s;
@@ -3146,6 +3650,16 @@ int main (int argc, char **argv)
   test_engrave ();
   test_signs ();
   test_score_marks ();
+  test_written ();
+  test_jumps ();
+  test_ties2 ();
+  test_tempo_words ();
+  test_staves3 ();
+  test_marks2 ();
+  test_arp_xml ();
+  test_endings_on ();
+  test_tuplet_own ();
+  test_own_time ();
   test_timing ();
   if (getenv ("GROOVE_TEST_SOUNDFONT") && *getenv ("GROOVE_TEST_SOUNDFONT"))
     test_gm_play (getenv ("GROOVE_TEST_SOUNDFONT"));

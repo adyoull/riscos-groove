@@ -46,6 +46,9 @@
 #define Font_LoseFont 0x40082
 #define Font_Paint    0x40086
 #endif
+#ifndef Font_ScanString
+#define Font_ScanString 0x400A1
+#endif
 #ifndef ColourTrans_SetFontColours
 #define ColourTrans_SetFontColours 0x4074F
 #endif
@@ -167,7 +170,7 @@ static gr_engraving *make (int track, int width, const char *title, int shown)
           shown_nbars = nt->nbars;
         }
     }
-  if (nt && track < 0)
+  if (nt && (track < 0 || nt->nparts > 1))   /* (a track's part: on several tracks, joined) */
     {
       int parts[GR_MAX_TRACKS], i, n = nt->nparts < GR_MAX_TRACKS ? nt->nparts : GR_MAX_TRACKS;
       for (i = 0; i < n; i++)
@@ -373,15 +376,104 @@ static int playing_bar (void)
   return b;
 }
 
-/* Text on the page: the outline font, as tall as the item says. */
-static void print_text (int x, int y, int size, const char *s)
+/* Text on the page: the outline font, as tall as the item says. Its
+   width, in OS units. */
+static int print_text (int x, int y, int size, const char *s, int bold)
 {
-  int f, pt16 = size * 16 * 2 / 5;           /* (2.5 OS units a point) */
-  if (_swix (Font_FindFont, _INR (1, 5) | _OUT (0), "Trinity.Medium", pt16, pt16, 0, 0, &f))
-    return;
+  int f, pt16 = size * 16 * 2 / 5, w = 0;    /* (2.5 OS units a point) */
+  if (_swix (Font_FindFont, _INR (1, 5) | _OUT (0), bold == 1 ? "Trinity.Bold" : bold == 2 ? "Trinity.Medium.Italic" : "Trinity.Medium",
+             pt16, pt16, 0, 0, &f)
+      && (!bold || _swix (Font_FindFont, _INR (1, 5) | _OUT (0), "Trinity.Medium", pt16, pt16, 0, 0, &f)))
+    return 0;
   _swix (ColourTrans_SetFontColours, _INR (0, 3), f, 0xFFFFFF00, 0, 14);
   _swix (Font_Paint, _INR (0, 4), f, s, (1 << 4) | (1 << 8), x, y);
+  /* (how far it went: millipoints, 400 an OS unit) */
+  if (!_swix (Font_ScanString, _INR (0, 4) | _OUT (3), f, s, 1 << 8, 0x7FFFFFFF, 0x7FFFFFFF, &w))
+    w /= 400;
+  else
+    w = 0;
   _swix (Font_LoseFont, _IN (0), f);
+  return w;
+}
+
+/* Bold (style 1) or italic (2) text on the screen: the desktop font's
+   (Homerton.Bold or .Medium.Oblique at 12 point), found once. Its width;
+   -1 if there's no such font (then bold is struck twice, a pixel apart,
+   and italic is upright). */
+static int screen_bold (int x, int y, const char *s, int style)
+{
+  static int f[3] = { -1, -1, -1 }, tried[3];
+  int w = 0;
+  style = style == 2 ? 2 : 1;
+  if (!tried[style])
+    {
+      tried[style] = 1;
+      if (_swix (Font_FindFont, _INR (1, 5) | _OUT (0), style == 1 ? "Homerton.Bold" : "Homerton.Medium.Oblique",
+                 12 * 16, 12 * 16, 0, 0, &f[style]))
+        f[style] = -1;
+    }
+  if (f[style] < 0)
+    return -1;
+  _swix (ColourTrans_SetFontColours, _INR (0, 3), f[style],
+         ((PAPER & 0xFFu) << 24) | (((PAPER >> 8) & 0xFFu) << 16) | (((PAPER >> 16) & 0xFFu) << 8),
+         ((INK & 0xFFu) << 24) | (((INK >> 8) & 0xFFu) << 16) | (((INK >> 16) & 0xFFu) << 8), 14);
+  _swix (Font_Paint, _INR (0, 4), f[style], s, (1 << 4) | (1 << 8), x, y);
+  if (!_swix (Font_ScanString, _INR (0, 4) | _OUT (3), f[style], s, 1 << 8, 0x7FFFFFFF, 0x7FFFFFFF, &w))
+    return w / 400;
+  return 0;
+}
+
+/* A score's text at x,y (OS units): on the page (size: its height) or the
+   screen (the desktop font; bold, its bold or struck twice a pixel apart); a metronome
+   mark's notes in it (GR_CH_*) drawn as notes, after the letters before
+   them. */
+static void score_text (int x, int y, int size, const char *s, int bold, int printing, int px)
+{
+  char piece[160];
+  size_t n = 0;
+  /* (a note as tall as the letters: the desktop font's are about 30 OS units) */
+  int scale = printing ? 60 : size > 0 ? 60 * 30 / size : 60;
+  if (scale < 20) scale = 20;
+  if (scale > 240) scale = 240;
+  for (;; s++)
+    {
+      unsigned char c = (unsigned char) *s;
+      if (c && (c < GR_CH_NOTE4 || c > GR_CH_NOTEDOT) && n + 1 < sizeof piece)
+        {
+          piece[n++] = (char) c;
+          continue;
+        }
+      piece[n] = 0;
+      if (n)
+        {
+          if (printing)
+            x += print_text (x, y, size, piece, bold);
+          else
+            {
+              int bw = bold ? screen_bold (x, y, piece, bold) : -1;
+              if (bw >= 0)
+                x += bw;
+              else
+                {
+                  gfx_text (x, y, piece, INK, PAPER, 0);
+                  if (bold == 1)
+                    gfx_text (x + px, y, piece, INK, PAPER, 0);
+                  x += gfx_text_width (piece) + (bold == 1 ? px : 0);
+                }
+            }
+        }
+      n = 0;
+      if (!c)
+        break;
+      {
+        int g = c == GR_CH_NOTE2 ? GL_MET_HALF : c == GR_CH_NOTE8 ? GL_MET_8TH : c == GR_CH_NOTEDOT ? GL_MET_DOT : GL_MET_QUARTER;
+        int adv = z_os (gr_glyphs[g].adv) * scale / 100;
+        gfx_colour (INK);
+        draw_glyph (g, x + (c == GR_CH_NOTEDOT ? 0 : adv / 6), y, scale);
+        x += adv + (c == GR_CH_NOTEDOT ? 0 : adv / 3);
+      }
+    }
+  gfx_colour (INK);
 }
 
 /* The engraving g, its top left at ox,oy, within clip: in the window, or
@@ -440,10 +532,7 @@ static void paint_eng (const gr_engraving *g, int ox, int oy, const int *clip)
           draw_arc (x0, y0, x1, y1, z_os (it->w), sp_os () * 16 / 100 + 1);
           break;
         case EK_TEXT:
-          if (print_sp)
-            print_text (x0, y0, z_os (it->y1), eng->text + it->w);
-          else
-            gfx_text (x0, y0, eng->text + it->w, INK, PAPER, 0);
+          score_text (x0, y0, z_os (it->y1), eng->text + it->w, it->glyph, print_sp != 0, px);
           gfx_colour (INK);
           break;
         }
@@ -544,7 +633,8 @@ static int paint_smooth (int ox, int oy, const int *clip)
       {
         int ty = oy + z_os (eng->it[i].y0);
         if (ty > clip[1] - 64 && ty < clip[3] + 64)
-          gfx_text (ox + z_os (eng->it[i].x0), ty, eng->text + eng->it[i].w, INK, PAPER, 0);
+          score_text (ox + z_os (eng->it[i].x0), ty, z_os (eng->it[i].y1), eng->text + eng->it[i].w,
+                      eng->it[i].glyph, 0, pw);
       }
   return 1;
 }
@@ -796,7 +886,7 @@ static void print_scores (const int *tracks, int n)
               else
                 {
                   int size = z_os (EG_SP * 6 / 5);
-                  print_text (wos / 2 - (int) strlen (foot) * size / 4, size / 2, size, foot);
+                  (void) print_text (wos / 2 - (int) strlen (foot) * size / 4, size / 2, size, foot, 0);
                 }
               err = _swix (PDriver_GetRectangle, _IN (1) | _OUT (0) | _OUT (2), block, &more, &id);
             }

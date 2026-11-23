@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Groove's test score for a part on three staves: a piano with an
+     extra staff over its two (treble, treble, bass), and an organ
+     (manuals, then pedals). The extra staff rests in bar 1 and plays a
+     G in bar 2; a note written but not played (an A) on the piano's
+     extra staff in bar 1. -->
+<museScore version="4.20">
+  <Score>
+    <Division>480</Division>
+    <Part id="1">
+      <Staff id="1"/>
+      <Staff id="2"/>
+      <Staff id="3"/>
+      <trackName>Piano</trackName>
+      <Instrument id="piano"><longName>Piano</longName><clef staff="3">F</clef><Channel><program value="0"/></Channel></Instrument>
+      </Part>
+    <Part id="2">
+      <Staff id="4"/>
+      <Staff id="5"/>
+      <Staff id="6"/>
+      <trackName>Organ</trackName>
+      <Instrument id="pipe-organ"><longName>Organ</longName><instrumentId>keyboard.organ.pipe</instrumentId><clef staff="2">F</clef><clef staff="3">F</clef><Channel><program value="19"/></Channel></Instrument>
+      </Part>
+    <Staff id="1">
+      <Measure><voice><TimeSig><sigN>4</sigN><sigD>4</sigD></TimeSig>
+        <Chord><durationType>whole</durationType><Note><pitch>81</pitch><tpc>17</tpc><play>0</play></Note></Chord></voice></Measure>
+      <Measure><voice><Chord><durationType>whole</durationType><Note><pitch>79</pitch><tpc>15</tpc></Note></Chord></voice></Measure>
+      </Staff>
+    <Staff id="2">
+      <Measure><voice><TimeSig><sigN>4</sigN><sigD>4</sigD></TimeSig>
+        <Chord><durationType>whole</durationType><Note><pitch>72</pitch><tpc>14</tpc></Note></Chord></voice></Measure>
+      <Measure><voice><Chord><durationType>whole</durationType><Note><pitch>76</pitch><tpc>18</tpc></Note></Chord></voice></Measure>
+      </Staff>
+    <Staff id="3">
+      <Measure><voice><TimeSig><sigN>4</sigN><sigD>4</sigD></TimeSig>
+        <Chord><durationType>whole</durationType><Note><pitch>48</pitch><tpc>14</tpc></Note></Chord></voice></Measure>
+      <Measure><voice><Chord><durationType>whole</durationType><Note><pitch>43</pitch><tpc>15</tpc></Note></Chord></voice></Measure>
+      </Staff>
+    <Staff id="4">
+      <Measure><voice><TimeSig><sigN>4</sigN><sigD>4</sigD></TimeSig>
+        <Chord><durationType>whole</durationType><Note><pitch>67</pitch><tpc>15</tpc></Note></Chord></voice></Measure>
+      <Measure><voice><Chord><durationType>whole</durationType><Note><pitch>69</pitch><tpc>17</tpc></Note></Chord></voice></Measure>
+      </Staff>
+    <Staff id="5">
+      <Measure><voice><TimeSig><sigN>4</sigN><sigD>4</sigD></TimeSig>
+        <Chord><durationType>whole</durationType><Note><pitch>52</pitch><tpc>18</tpc></Note></Chord></voice></Measure>
+      <Measure><voice><Chord><durationType>whole</durationType><Note><pitch>53</pitch><tpc>13</tpc></Note></Chord></voice></Measure>
+      </Staff>
+    <Staff id="6">
+      <Measure><voice><TimeSig><sigN>4</sigN><sigD>4</sigD></TimeSig>
+        <Chord><durationType>whole</durationType><Note><pitch>36</pitch><tpc>14</tpc></Note></Chord></voice></Measure>
+      <Measure><voice><Chord><durationType>whole</durationType><Note><pitch>41</pitch><tpc>13</tpc></Note></Chord></voice></Measure>
+      </Staff>
+    </Score>
+  </museScore>

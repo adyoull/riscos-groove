@@ -24,6 +24,36 @@ void gr_song_init (gr_song *s)
   s->meters[0].bar = 0;
   s->meters[0].num = 4;
   s->meters[0].den = 4;
+  s->nkeysigs = 0;
+}
+
+int gr_tuplet_bits (int act, int norm, double glen, double beat)
+{
+  int t, r;
+  if (act <= 0 || norm <= 0 || act == norm)
+    return 0;
+  t = act == 3 && norm == 2 ? GR_TUP_3 : act == 5 && norm == 4 ? GR_TUP_5 : act == 6 && norm == 4 ? GR_TUP_6
+    : act == 2 && norm == 3 ? GR_TUP_2 : act == 4 && norm == 3 ? GR_TUP_4 : act == 7 ? GR_TUP_7 : GR_TUP_OTHER;
+  r = glen <= 0 || beat <= 0 ? 0 : glen < beat - 1e-6 ? 0x20 : glen < 2 * beat - 1e-6 ? 0x40 : 0x60;
+  return r | t << 13;
+}
+
+int gr_set_keysig (gr_song *s, int bar, int fifths, int minor)
+{
+  int i;
+  for (i = 0; i < s->nkeysigs && s->keysigs[i].bar < bar; i++)
+    ;
+  if (i == s->nkeysigs || s->keysigs[i].bar != bar)
+    {
+      if (s->nkeysigs == GR_MAX_KEYSIGS)
+        return -1;
+      memmove (&s->keysigs[i + 1], &s->keysigs[i], (size_t) (s->nkeysigs - i) * sizeof s->keysigs[0]);
+      s->nkeysigs++;
+    }
+  s->keysigs[i].bar = bar;
+  s->keysigs[i].fifths = fifths < -7 ? -7 : fifths > 7 ? 7 : fifths;
+  s->keysigs[i].minor = minor != 0;
+  return 0;
 }
 
 /* ---- tempo ---------------------------------------------------------------- */
@@ -90,6 +120,7 @@ int gr_tempo_add (gr_song *s, int tick, double bpm)
   if (i < s->ntempos && s->tempos[i].tick == tick)
     {
       s->tempos[i].bpm = (float) bpm;
+      s->tempos[i].hidden = 0;
       return 0;
     }
   if (s->ntempos >= GR_MAX_TEMPOS)
@@ -97,6 +128,7 @@ int gr_tempo_add (gr_song *s, int tick, double bpm)
   memmove (&s->tempos[i + 1], &s->tempos[i], (size_t) (s->ntempos - i) * sizeof s->tempos[0]);
   s->tempos[i].tick = tick;
   s->tempos[i].bpm = (float) bpm;
+  s->tempos[i].hidden = 0;
   s->ntempos++;
   return 0;
 }
@@ -110,6 +142,7 @@ void gr_tempo_base (gr_song *s, int bpm)
     for (i = 0; i < s->ntempos; i++)
       s->tempos[i].bpm = s->tempos[i].bpm * bpm / s->tempo;
   s->tempo = bpm;
+  s->tempo_hidden = 0;
 }
 
 /* ---- time signatures ---------------------------------------------------- */
@@ -118,7 +151,7 @@ static int meter_bar_len (const gr_meter *m) { return m->num * (4 * GR_PPQ) / m-
 
 const gr_meter *gr_meter_at (const gr_song *s, int bar)
 {
-  static const gr_meter four = { 0, 4, 4 };
+  static const gr_meter four = { 0, 4, 4, 0 };
   int i;
   if (s->nmeters < 1)
     return &four;
@@ -179,7 +212,7 @@ int gr_bar_snap (const gr_song *s, int tick)
 int gr_set_meter (gr_song *s, int bar, int num, int den)
 {
   int i, j;
-  if (bar < 0 || num < 1 || num > 32 || den < 1 || den > 64 || (den & (den - 1)))
+  if (bar < 0 || num < 1 || num > 128 || den < 1 || den > 64 || (den & (den - 1)))
     return -1;
   if (s->nmeters < 1)
     {
@@ -195,15 +228,29 @@ int gr_set_meter (gr_song *s, int bar, int num, int den)
       memmove (&s->meters[i + 1], &s->meters[i], (size_t) (s->nmeters - i) * sizeof s->meters[0]);
       s->nmeters++;
       s->meters[i].bar = bar;
+      s->meters[i].symbol = 0;
     }
+  if (s->meters[i].num != num || s->meters[i].den != den)
+    s->meters[i].symbol = 0;
   s->meters[i].num = num;
   s->meters[i].den = den;
   /* A change to the meter already in force isn't a change. */
   for (i = j = 1; i < s->nmeters; i++)
-    if (s->meters[i].num != s->meters[j - 1].num || s->meters[i].den != s->meters[j - 1].den)
+    if (s->meters[i].num != s->meters[j - 1].num || s->meters[i].den != s->meters[j - 1].den
+        || s->meters[i].symbol != s->meters[j - 1].symbol)
       s->meters[j++] = s->meters[i];
   s->nmeters = j;
   return 0;
+}
+
+void gr_set_meter_symbol (gr_song *s, int bar, int symbol)
+{
+  int i;
+  for (i = 0; i < s->nmeters; i++)
+    if (s->meters[i].bar == bar)
+      s->meters[i].symbol = symbol == 1 && s->meters[i].num == 4 && s->meters[i].den == 4 ? 1
+        : symbol == 2 && s->meters[i].num == 2 && s->meters[i].den == 2 ? 2
+        : symbol == 3 ? 3 : 0;
 }
 
 void gr_song_cover (gr_song *s, int end_tick)
@@ -212,9 +259,55 @@ void gr_song_cover (gr_song *s, int end_tick)
     s->bars = gr_tick_bar (s, end_tick - 1) + 1;
 }
 
+int gr_lyric_add (gr_song *s, int track, int tick, int staff, int verse, int syllabic, const char *text)
+{
+  gr_lyric *l;
+  if (s->nlyrics == s->lyriccap)
+    {
+      int cap = s->lyriccap ? s->lyriccap * 2 : 256;
+      gr_lyric *a = realloc (s->lyrics, (size_t) cap * sizeof *a);
+      if (!a)
+        return -1;
+      s->lyrics = a;
+      s->lyriccap = cap;
+    }
+  l = &s->lyrics[s->nlyrics++];
+  memset (l, 0, sizeof *l);
+  l->track = track;
+  l->tick = tick;
+  l->staff = (unsigned char) (staff != 0);
+  l->verse = (unsigned char) (verse == GR_TEXT_ABOVE || verse == GR_TEXT_BELOW || verse == GR_TEXT_TEMPO || verse == GR_TEXT_TEMPO_MARK || verse == GR_TEXT_PEDAL ? verse : verse < 0 ? 0 : verse > 9 ? 9 : verse);
+  l->syllabic = (unsigned char) (syllabic & 3);
+  snprintf (l->text, sizeof l->text, "%s", text);
+  return 0;
+}
+
+int gr_set_srcbar (gr_song *s, int bar, int measure)
+{
+  if (bar < 0 || bar >= 65535)
+    return 0;
+  if (bar >= s->nsrcbar)
+    {
+      unsigned short *a = realloc (s->srcbar, (size_t) (bar + 1) * sizeof *a);
+      if (!a)
+        return -1;
+      memset (a + s->nsrcbar, 0, (size_t) (bar + 1 - s->nsrcbar) * sizeof *a);
+      s->srcbar = a;
+      s->nsrcbar = bar + 1;
+    }
+  s->srcbar[bar] = (unsigned short) (measure < 0 || measure >= 65534 ? 0 : measure + 1);
+  return 0;
+}
+
 void gr_song_free (gr_song *s)
 {
   int i;
+  free (s->lyrics);
+  s->lyrics = NULL;
+  s->nlyrics = s->lyriccap = 0;
+  free (s->srcbar);
+  s->srcbar = NULL;
+  s->nsrcbar = 0;
   for (i = 0; i < GR_MAX_CLIPS; i++)
     {
       free (s->clips[i].data);
@@ -248,6 +341,11 @@ void gr_track_move (gr_song *s, int from, int to)
   int i;
   if (from < 0 || from >= s->ntracks || to < 0 || to >= s->ntracks || from == to)
     return;
+  /* (one moved from or into the middle of an instrument on several tracks
+     leaves it on its own) */
+  if (from + 1 < s->ntracks)
+    s->tracks[from + 1].joined = GR_JOIN_NONE;
+  s->tracks[from].joined = GR_JOIN_NONE;
   t = s->tracks[from];
   if (from < to)
     memmove (&s->tracks[from], &s->tracks[from + 1], (size_t) (to - from) * sizeof t);
@@ -266,6 +364,20 @@ void gr_track_move (gr_song *s, int from, int to)
           r++;
         s->regions[i].track = r;
       }
+  if (to + 1 < s->ntracks)
+    s->tracks[to + 1].joined = GR_JOIN_NONE;
+  /* (its words go with it) */
+  for (i = 0; i < s->nlyrics; i++)
+    {
+      int r = s->lyrics[i].track;
+      if (r == from)
+        r = to;
+      else if (from < to && r > from && r <= to)
+        r--;
+      else if (from > to && r >= to && r < from)
+        r++;
+      s->lyrics[i].track = r;
+    }
 }
 
 void gr_track_delete (gr_song *s, int track)
@@ -284,6 +396,21 @@ void gr_track_delete (gr_song *s, int track)
   memmove (&s->tracks[track], &s->tracks[track + 1],
            (size_t) (s->ntracks - track - 1) * sizeof s->tracks[0]);
   s->ntracks--;
+  if (track < s->ntracks)
+    s->tracks[track].joined = GR_JOIN_NONE;   /* (what it was joined to has gone) */
+  /* (its words go with it) */
+  {
+    int w = 0;
+    for (i = 0; i < s->nlyrics; i++)
+      if (s->lyrics[i].track != track)
+        {
+          s->lyrics[w] = s->lyrics[i];
+          if (s->lyrics[w].track > track)
+            s->lyrics[w].track--;
+          w++;
+        }
+    s->nlyrics = w;
+  }
   gr_song_gc (s);
 }
 
@@ -481,6 +608,9 @@ int gr_pattern_add_note (gr_pattern *p, int tick, int len, int pitch, int vel)
   p->notes[i].len = (int16_t) len;
   p->notes[i].pitch = (uint8_t) pitch;
   p->notes[i].vel = (uint8_t) vel;
+  p->notes[i].wr = 0;
+  p->notes[i].spell = 0;
+  p->notes[i].tie1 = 0;
   p->nnotes++;
   return i;
 }
@@ -612,7 +742,9 @@ int gr_region_split (gr_song *s, int region, int tick)
       for (k = 0; k < src->nnotes; k++)
         {
           const gr_note *x = &src->notes[k];
-          gr_pattern_add_note (&s->patterns[np], (x->tick - rot + len) % len, x->len, x->pitch, x->vel);
+          int at = gr_pattern_add_note (&s->patterns[np], (x->tick - rot + len) % len, x->len, x->pitch, x->vel);
+          if (at >= 0)
+            GR_NOTE_WRITTEN (&s->patterns[np].notes[at], x);
         }
       for (k = 0; k < src->nctls; k++)
         {
@@ -776,7 +908,12 @@ const char *gr_drum_name (int key)
     }
   return other[key];
 }
-const char *gr_key_name (int k) { return notes[((k % 12) + 12) % 12]; }
+const char *gr_key_name (int k)
+{
+  /* (as keys are named: E flat, not D sharp) */
+  static const char *const keys[12] = { "C", "Db", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B" };
+  return keys[((k % 12) + 12) % 12];
+}
 
 const char *gr_note_name (int pitch, char buf[8])
 {

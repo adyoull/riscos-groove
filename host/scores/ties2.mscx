@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Groove's test score for ties MuseScore allows between voices and over
+     other notes, and notes it shows but doesn't play: bar 1, a semibreve D
+     tied into the second voice's in bar 2; bar 3, a triplet quaver C tied
+     over the next two to the crotchet C on beat 2, and a cue note (A, not
+     played) in the second voice. -->
+<museScore version="4.20">
+  <Score>
+    <Division>480</Division>
+    <Part id="1">
+      <Staff id="1"/>
+      <trackName>Cello</trackName>
+      <Instrument id="cello"><longName>Cello</longName><clef>F</clef><Channel><program value="42"/></Channel></Instrument>
+      </Part>
+    <Staff id="1">
+      <Measure>
+        <voice>
+          <TimeSig><sigN>4</sigN><sigD>4</sigD></TimeSig>
+          <Chord><durationType>whole</durationType>
+            <Note><Spanner type="Tie"><Tie/><next><location><voices>1</voices><measures>1</measures></location></next></Spanner><pitch>50</pitch><tpc>16</tpc></Note></Chord>
+          </voice>
+        </Measure>
+      <Measure>
+        <voice>
+          <Chord><durationType>half</durationType><Note><pitch>53</pitch><tpc>13</tpc></Note></Chord>
+          <Chord><durationType>half</durationType><Note><pitch>55</pitch><tpc>15</tpc></Note></Chord>
+          </voice>
+        <voice>
+          <Chord><durationType>whole</durationType>
+            <Note><Spanner type="Tie"><prev><location><voices>-1</voices><measures>-1</measures></location></prev></Spanner><pitch>50</pitch><tpc>16</tpc></Note></Chord>
+          </voice>
+        </Measure>
+      <Measure>
+        <voice>
+          <Tuplet><normalNotes>2</normalNotes><actualNotes>3</actualNotes><baseNote>eighth</baseNote></Tuplet>
+          <Chord><durationType>eighth</durationType>
+            <Note><Spanner type="Tie"><Tie/><next><location><fractions>1/4</fractions></location></next></Spanner><pitch>48</pitch><tpc>14</tpc></Note></Chord>
+          <Chord><durationType>eighth</durationType><Note><pitch>52</pitch><tpc>18</tpc></Note></Chord>
+          <Chord><durationType>eighth</durationType><Note><pitch>55</pitch><tpc>15</tpc></Note></Chord>
+          <endTuplet/>
+          <Chord><durationType>quarter</durationType>
+            <Note><Spanner type="Tie"><prev><location><fractions>-1/4</fractions></location></prev></Spanner><pitch>48</pitch><tpc>14</tpc></Note></Chord>
+          <Rest><durationType>half</durationType></Rest>
+          </voice>
+        <voice>
+          <location><fractions>1/2</fractions></location>
+          <Chord><durationType>half</durationType><Note><pitch>57</pitch><tpc>17</tpc><play>0</play></Note></Chord>
+          </voice>
+        </Measure>
+      </Staff>
+    </Score>
+  </museScore>

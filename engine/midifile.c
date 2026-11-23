@@ -66,6 +66,8 @@ static int add_note (mchan *c, int start, int end, int key, int vel)
   c->notes[c->n].end = end > start ? end : start + 1;
   c->notes[c->n].key = key;
   c->notes[c->n].vel = vel;
+  c->notes[c->n].wr = 0;
+  c->notes[c->n].tie1 = 0;
   c->n++;
   return 0;
 }

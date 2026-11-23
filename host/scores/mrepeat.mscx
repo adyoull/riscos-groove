@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Groove's test score for measure repeats (as MuseScore 4 writes them):
+     C, D, a two-measure repeat, a one-measure repeat. Played: C D C D D. -->
+<museScore version="4.20">
+  <Score>
+    <Division>480</Division>
+    <Part id="1">
+      <Staff id="1"/>
+      <trackName>Flute</trackName>
+      <Instrument id="flute"><longName>Flute</longName><trackName>Flute</trackName><Channel><program value="73"/></Channel></Instrument>
+      </Part>
+    <Staff id="1">
+      <Measure>
+        <voice>
+          <TimeSig><sigN>4</sigN><sigD>4</sigD></TimeSig>
+          <Chord><durationType>whole</durationType><Note><pitch>60</pitch></Note></Chord>
+          </voice>
+        </Measure>
+      <Measure>
+        <voice>
+          <Chord><durationType>whole</durationType><Note><pitch>62</pitch></Note></Chord>
+          </voice>
+        </Measure>
+      <Measure>
+        <measureRepeatCount>1</measureRepeatCount>
+        <voice>
+          <MeasureRepeat><subtype>2</subtype><durationType>measure</durationType><duration>4/4</duration></MeasureRepeat>
+          </voice>
+        </Measure>
+      <Measure>
+        <measureRepeatCount>2</measureRepeatCount>
+        <voice>
+          <Rest><durationType>measure</durationType><duration>4/4</duration></Rest>
+          </voice>
+        </Measure>
+      <Measure>
+        <measureRepeatCount>1</measureRepeatCount>
+        <voice>
+          <MeasureRepeat><subtype>1</subtype><durationType>measure</durationType><duration>4/4</duration></MeasureRepeat>
+          </voice>
+        </Measure>
+      </Staff>
+    </Score>
+  </museScore>

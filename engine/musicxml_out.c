@@ -2,28 +2,46 @@
    programs: the written music that notation.c makes from the piano roll
    (the same the Score window shows), one part per drum or instrument
    track with notes, with each note's velocity as its "dynamics". */
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include "notation.h"
 
 
-/* MusicXML divisions a crotchet: five times Groove's ticks, so a
-   quintuplet's notes (a fifth of a beat) come out whole. */
-#define XDIV (GR_PPQ * 5)
+/* MusicXML divisions a crotchet: XM times Groove's ticks, so tuplets'
+   notes (a third, fifth, seventh or ninth of their time) come out whole. */
+#define XM 105
+#define XDIV (GR_PPQ * XM)
 
 /* An event's length in divisions: a quintuplet note's from its written
-   value (its ticks are rounded), anything else's from its ticks. */
+   value (its ticks are rounded), a score's tuplet's from where it is in
+   it (so the tuplet adds up to its time), anything else's from its ticks. */
 static int xdur (const gr_nevent *e)
 {
-  if (e->tuplet && e->tup_n == 5)
+  if (e->tuplet && e->tup_at != 0xFFFF && e->tup_n > 0 && e->tup_m > 0)
+    {
+      int t = gr_nvalue_ticks (e->value), d;
+      long a, b;
+      for (d = 0; d < e->dots; d++)
+        t += gr_nvalue_ticks (e->value) >> (d + 1);
+      if (e->trem & 0x30)
+        t /= 2;                         /* (a two-note tremolo's: written twice as long) */
+      a = (long) floor ((double) e->tup_at * e->tup_m * XM / e->tup_n + 0.5);
+      b = (long) floor ((double) (e->tup_at + t) * e->tup_m * XM / e->tup_n + 0.5);
+      if ((e->tuplet & 4) && labs (b - (long) e->tup_len * XM) < 2 * XM)
+        b = (long) e->tup_len * XM;   /* (the last: to its end) */
+      if (b > a)
+        return (int) (b - a);
+    }
+  if (e->tuplet && e->tup_n == 5 && e->tup_m == 4)
     {
       int t = gr_nvalue_ticks (e->value);
       if (e->dots)
         t += t / 2;
-      return t * 4;
+      return t * 4 * XM / 5;
     }
-  return e->dur * 5;
+  return e->dur * XM;
 }
 
 typedef struct
@@ -86,9 +104,9 @@ static const char *const head_name[] = { NULL, "x", "circle-x", "diamond", "inve
 
 /* A direction under the staff: a hairpin, or the pedal (offset: ticks on
    from here; sound: the pedal's sound, 1 down, 0 up, -1 none). */
-static void w_direction (out *o, const char *what, int voice, int staff, int staves, int offset)
+static void w_direction_at (out *o, const char *what, int voice, int staff, int staves, int offset, int above)
 {
-  w (o, "      <direction placement=\"below\">\n        <direction-type>%s</direction-type>\n", what);
+  w (o, "      <direction placement=\"%s\">\n        <direction-type>%s</direction-type>\n", above ? "above" : "below", what);
   if (offset)
     w (o, "        <offset>%d</offset>\n", offset);
   if (voice)
@@ -98,10 +116,15 @@ static void w_direction (out *o, const char *what, int voice, int staff, int sta
   w (o, "      </direction>\n");
 }
 
+static void w_direction (out *o, const char *what, int voice, int staff, int staves, int offset)
+{
+  w_direction_at (o, what, voice, staff, staves, offset, 0);
+}
+
 static void w_event (out *o, const gr_notation *nt, const gr_nevent *e, int voice, int staff, int staves,
                      int drums, const char *pid)
 {
-  int k, n = e->kind == NE_NOTE ? e->nheads : 1;
+  int k, d, n = e->kind == NE_NOTE ? e->nheads : 1;
   if (e->kind == NE_SPACE)
     {
       w (o, "      <forward><duration>%d</duration><voice>%d</voice>", xdur (e), voice);
@@ -123,15 +146,15 @@ static void w_event (out *o, const gr_notation *nt, const gr_nevent *e, int voic
     w_direction (o, "<wedge type=\"stop\" number=\"1\"/>", voice, staff, staves, 0);
   if (e->dyn)
     {
-      w (o, "      <direction placement=\"below\">\n        <direction-type><dynamics><%s/></dynamics></direction-type>\n"
-         "        <voice>%d</voice>\n", gr_ndyn_name (e->dyn), voice);
+      w (o, "      <direction placement=\"%s\">\n        <direction-type><dynamics><%s/></dynamics></direction-type>\n"
+         "        <voice>%d</voice>\n", e->wedge & NW_DYN_ABOVE ? "above" : "below", gr_ndyn_name (e->dyn), voice);
       if (staves > 1)
         w (o, "        <staff>%d</staff>\n", staff);
       w (o, "      </direction>\n");
     }
   if (e->wedge & (NW_CRESC | NW_DIM))
-    w_direction (o, e->wedge & NW_CRESC ? "<wedge type=\"crescendo\" number=\"1\"/>"
-                 : "<wedge type=\"diminuendo\" number=\"1\"/>", voice, staff, staves, 0);
+    w_direction_at (o, e->wedge & NW_CRESC ? "<wedge type=\"crescendo\" number=\"1\"/>"
+                    : "<wedge type=\"diminuendo\" number=\"1\"/>", voice, staff, staves, 0, (e->wedge & NW_ABOVE) != 0);
   for (k = 0; k < n; k++)
     {
       const gr_nhead *h = e->kind == NE_NOTE ? &nt->hd[e->head + k] : NULL;
@@ -139,8 +162,10 @@ static void w_event (out *o, const gr_notation *nt, const gr_nevent *e, int voic
       if (h)
         w (o, " dynamics=\"%.2f\"", h->vel * 100.0 / 90);
       if (h && h->release)
-        w (o, " release=\"%d\"", h->release * 5);
+        w (o, " release=\"%d\"", h->release * XM);
       w (o, ">\n");
+      if (h && (e->artic & NA_CUE))
+        w (o, "        <cue/>\n");
       if (k)
         w (o, "        <chord/>\n");
       if (!h)
@@ -156,24 +181,29 @@ static void w_event (out *o, const gr_notation *nt, const gr_nevent *e, int voic
           w (o, "<octave>%d</octave></pitch>\n", h->octave);
         }
       w (o, "        <duration>%d</duration>\n", xdur (e));
-      if (h && h->tie_stop)
+      if (h && h->tie_stop && !(e->artic & NA_CUE))
         w (o, "        <tie type=\"stop\"/>\n");
-      if (h && h->tie_start)
+      if (h && h->tie_start && !(e->artic & NA_CUE))
         w (o, "        <tie type=\"start\"/>\n");
       if (h && drums)
         w (o, "        <instrument id=\"%s-I%d\"/>\n", pid, h->pitch + 1);
       w (o, "        <voice>%d</voice>\n", voice);
-      w (o, "        <type>%s</type>\n", gr_nvalue_name (e->value));
-      if (e->dots)
+      w (o, "        <type>%s</type>\n", e->breve ? "breve" : gr_nvalue_name (e->value));
+      for (d = 0; d < e->dots; d++)
         w (o, "        <dot/>\n");
-      if (e->tuplet)
+      if ((e->trem & 0x30) && e->tuplet && e->tup_n && e->tup_m)
+        w (o, "        <time-modification><actual-notes>%d</actual-notes><normal-notes>%d</normal-notes></time-modification>\n",
+           e->tup_n * 2, e->tup_m);     /* (a tremolo's 2:1 in a tuplet's: 12:4 in a sextuplet) */
+      else if (e->trem & 0x30)
+        w (o, "        <time-modification><actual-notes>2</actual-notes><normal-notes>1</normal-notes></time-modification>\n");
+      else if (e->tuplet && e->tup_n != e->tup_m)   /* (2:2 changes nothing: none, as MuseScore) */
         w (o, "        <time-modification><actual-notes>%d</actual-notes><normal-notes>%d</normal-notes></time-modification>\n",
            e->tup_n, e->tup_m);
       if (h && drums && h->head != NH_NORMAL)
         w (o, "        <notehead>%s</notehead>\n", head_name[h->head]);
       if (staves > 1)
         w (o, "        <staff>%d</staff>\n", staff);
-      if ((h && (h->tie_stop || h->tie_start)) || (!k && ((e->tuplet & 6) || e->artic || e->slur))
+      if ((h && (h->tie_stop || h->tie_start)) || (!k && ((e->tuplet & 6) || e->artic || e->slur || e->orn || e->trem))
           || (e->artic & NA_ARPEGGIO))
         {
           w (o, "        <notations>");
@@ -181,9 +211,23 @@ static void w_event (out *o, const gr_notation *nt, const gr_nevent *e, int voic
             w (o, "<slur type=\"stop\" number=\"1\"/>");
           if (!k && (e->slur & NS_START))
             w (o, "<slur type=\"start\" number=\"1\"/>");
-          if (!k && (e->artic & (NA_ACCENT | NA_STACCATO)))
-            w (o, "<articulations>%s%s</articulations>", e->artic & NA_ACCENT ? "<accent/>" : "",
-               e->artic & NA_STACCATO ? "<staccato/>" : "");
+          if (!k && (e->artic & (NA_ACCENT | NA_STACCATO | NA_TENUTO | NA_MARCATO)))
+            w (o, "<articulations>%s%s%s%s</articulations>", e->artic & NA_ACCENT ? "<accent/>" : "",
+               e->artic & NA_MARCATO ? "<strong-accent/>" : "", e->artic & NA_STACCATO ? "<staccato/>" : "",
+               e->artic & NA_TENUTO ? "<tenuto/>" : "");
+          if (!k && (e->artic & NA_FERMATA))
+            w (o, e->artic & NA_FERM_BELOW ? "<fermata type=\"inverted\"/>" : "<fermata type=\"upright\"/>");
+          if (!k && (e->orn || e->trem))
+            {
+              w (o, "<ornaments>");
+              if (e->orn)
+                w (o, e->orn == NO_TRILL ? "<trill-mark/>" : e->orn == NO_MORDENT ? "<mordent/>" : "<turn/>");
+              if (e->trem & 7)
+                w (o, "<tremolo type=\"%s\">%d</tremolo>", e->trem & 0x10 ? "start" : "single", e->trem & 7);
+              else if (e->trem & 0x20)
+                w (o, "<tremolo type=\"stop\">0</tremolo>");
+              w (o, "</ornaments>");
+            }
           if (e->artic & NA_ARPEGGIO)
             w (o, e->artic & NA_ARP_DOWN ? "<arpeggiate direction=\"down\"/>" : e->artic & NA_ARP_UP ? "<arpeggiate direction=\"up\"/>" : "<arpeggiate/>");
           if (h && h->tie_stop)
@@ -191,7 +235,8 @@ static void w_event (out *o, const gr_notation *nt, const gr_nevent *e, int voic
           if (h && h->tie_start)
             w (o, "<tied type=\"start\"/>");
           if (!k && (e->tuplet & 2))
-            w (o, "<tuplet type=\"start\" bracket=\"yes\"/>");
+            w (o, "<tuplet type=\"start\" bracket=\"%s\"%s/>", e->tuplet & 16 ? "no" : "yes",
+               e->tuplet & 8 ? " show-number=\"none\"" : "");
           if (!k && (e->tuplet & 4))
             w (o, "<tuplet type=\"stop\"/>");
           w (o, "</notations>\n");
@@ -242,7 +287,7 @@ static int ott_ends (const gr_npart *pp, int b, int nbars, int z)
 
 /* Its start (its notes are at the pitch they sound: the line says
    they're written an octave or two nearer) or its stop. */
-static void w_ottava (out *o, const gr_npart *pp, int b, int z, int start)
+static void w_ottava (out *o, const gr_npart *pp, int b, int z, int start, int zoff, int staves)
 {
   int ov = pp->ottava[b * 2 + z], size = ov == 1 || ov == -1 ? 8 : 15;
   if (start)
@@ -250,22 +295,30 @@ static void w_ottava (out *o, const gr_npart *pp, int b, int z, int start)
        ov > 0 ? "above" : "below", ov > 0 ? "down" : "up", size);
   else
     w (o, "      <direction>\n        <direction-type><octave-shift type=\"stop\" size=\"%d\"/></direction-type>\n", size);
-  if (pp->staves > 1)
-    w (o, "        <staff>%d</staff>\n", z + 1);
+  if (staves > 1)
+    w (o, "        <staff>%d</staff>\n", zoff + z + 1);
   w (o, "      </direction>\n");
 }
 
 int gr_musicxml_export (const gr_song *s, const char *path)
 {
+  return gr_musicxml_export_ex (s, path, GR_NT_REPEATS);
+}
+
+int gr_musicxml_export_ex (const gr_song *s, const char *path, int flags)
+{
   out o;
-  gr_notation *nt = gr_notation_make_ex (s, -1, 1, GR_NT_REPEATS);
-  int p, b, k, z, pnum[GR_MAX_TRACKS], t;
+  gr_notation *nt = gr_notation_make_ex (s, -1, 1, flags);
+  int p, b, k, z, pnum[GR_MAX_TRACKS], t, np, pidx[GR_MAX_TRACKS];
   char title[64];
   if (!nt)
     return -1;
   memset (pnum, 0, sizeof pnum);
   for (p = 0; p < nt->nparts; p++)
-    pnum[nt->parts[p].track] = p + 1;
+    pidx[nt->parts[p].track] = p;
+  for (p = 0, k = 0; p < nt->nparts; p++)
+    if (!nt->parts[p].joined || p == 0)
+      pnum[nt->parts[p].track] = ++k;     /* (a joined track: in the part before's) */
   if (!(o.f = fopen (path, "w")))
     {
       gr_notation_free (nt);
@@ -295,7 +348,7 @@ int gr_musicxml_export (const gr_song *s, const char *path)
       if (tr->type == TRK_DRUMS)
         {
           int used[128] = { 0 };
-          const gr_npart *pp = &nt->parts[pnum[t] - 1];
+          const gr_npart *pp = &nt->parts[pidx[t]];
           for (b = 0; b < nt->nbars; b++)
             for (z = 0; z < 2; z++)
               {
@@ -336,20 +389,28 @@ int gr_musicxml_export (const gr_song *s, const char *path)
   w (&o, "  </part-list>\n");
 
 
-  for (p = 0; p < nt->nparts; p++)
+  for (p = 0; p < nt->nparts; p += np)
     {
-      const gr_npart *pp = &nt->parts[p];
+      /* a part: one instrument, on one track or several joined (each
+         track's staves after the one before's) */
+      const gr_npart *p0 = &nt->parts[p], *pp;
       char pid[16];
-      snprintf (pid, sizeof pid, "P%d", p + 1);
+      int staves = p0->staves, mi, zoff;
+      np = 1;
+      while (p + np < nt->nparts && nt->parts[p + np].joined)
+        staves += nt->parts[p + np++].staves;
+      snprintf (pid, sizeof pid, "P%d", pnum[p0->track]);
       w (&o, "  <part id=\"%s\">\n", pid);
       for (b = 0; b < nt->nbars; b++)
         {
+          pp = p0;
           const gr_nbar *bar = &nt->bars[b];
           int newtime = b == 0 || bar->num != nt->bars[b - 1].num || bar->den != nt->bars[b - 1].den, first = 1;
           int newkey = !pp->drums && (b == 0 || pp->key[b] != pp->key[b - 1] || bar->minor != nt->bars[b - 1].minor);
           int newclef = b == 0;
-          for (z = 0; z < pp->staves; z++)
-            newclef |= b > 0 && pp->clefs[b * 2 + z] != pp->clefs[(b - 1) * 2 + z];
+          for (mi = 0; mi < np; mi++)
+            for (z = 0; z < nt->parts[p + mi].staves; z++)
+              newclef |= b > 0 && nt->parts[p + mi].clefs[b * 2 + z] != nt->parts[p + mi].clefs[(b - 1) * 2 + z];
           w (&o, "    <measure number=\"%d\">\n", b + 1);
           /* a repeat starting, or an ending */
           if ((bar->rep & NR_START) || bar->ending_start)
@@ -372,21 +433,27 @@ int gr_musicxml_export (const gr_song *s, const char *path)
                 w (&o, "        <key><fifths>%d</fifths><mode>%s</mode></key>\n", pp->key[b],
                    bar->minor ? "minor" : "major");
               if (newtime)
-                w (&o, "        <time><beats>%d</beats><beat-type>%d</beat-type></time>\n", bar->num, bar->den);
-              if (b == 0 && pp->staves > 1)
-                w (&o, "        <staves>2</staves>\n");
-              for (z = 0; z < pp->staves; z++)
-                if (b == 0 || pp->clefs[b * 2 + z] != pp->clefs[(b - 1) * 2 + z])
-                  w_clef (&o, pp->clefs[b * 2 + z], pp->staves > 1 ? z + 1 : 0);
+                w (&o, "        <time%s><beats>%d</beats><beat-type>%d</beat-type></time>\n",
+                   bar->timesym == 1 ? " symbol=\"common\"" : bar->timesym == 2 ? " symbol=\"cut\""
+                   : bar->timesym == 3 ? " print-object=\"no\"" : "", bar->num, bar->den);
+              if (b == 0 && staves > 1)
+                w (&o, "        <staves>%d</staves>\n", staves);
+              for (mi = 0, zoff = 0; mi < np; zoff += nt->parts[p + mi++].staves)
+                for (z = 0; z < nt->parts[p + mi].staves; z++)
+                  if (b == 0 || nt->parts[p + mi].clefs[b * 2 + z] != nt->parts[p + mi].clefs[(b - 1) * 2 + z])
+                    w_clef (&o, nt->parts[p + mi].clefs[b * 2 + z], staves > 1 ? zoff + z + 1 : 0);
+              if (b == 0 && pp->lines == 1)
+                w (&o, "        <staff-details><staff-lines>1</staff-lines></staff-details>\n");
               if (b == 0)
                 w_transpose (&o, pp->transpose);
               w (&o, "      </attributes>\n");
             }
           /* an 8va or 8vb line starting (its notes are at the pitch they
              sound: the line says they're written an octave nearer) */
-          for (z = 0; z < pp->staves; z++)
-            if (ott_starts (pp, b, z) && !pp->ott_start[b * 2 + z])
-              w_ottava (&o, pp, b, z, 1);
+          for (mi = 0, zoff = 0; mi < np; zoff += nt->parts[p + mi++].staves)
+            for (z = 0; z < nt->parts[p + mi].staves; z++)
+              if (ott_starts (&nt->parts[p + mi], b, z) && !nt->parts[p + mi].ott_start[b * 2 + z])
+                w_ottava (&o, &nt->parts[p + mi], b, z, 1, zoff, staves);
           if (b == 0 && p == 0)
             w (&o, "      <direction placement=\"above\">\n        <direction-type>\n"
                "          <metronome><beat-unit>quarter</beat-unit><per-minute>%d</per-minute></metronome>\n"
@@ -405,29 +472,30 @@ int gr_musicxml_export (const gr_song *s, const char *path)
                        "          <metronome><beat-unit>quarter</beat-unit><per-minute>%d</per-minute></metronome>\n"
                        "        </direction-type>\n", (int) (s->tempos[k].bpm + 0.5));
                     if (s->tempos[k].tick > t0)
-                      w (&o, "        <offset sound=\"yes\">%d</offset>\n", (s->tempos[k].tick - t0) * 5);
+                      w (&o, "        <offset sound=\"yes\">%d</offset>\n", (s->tempos[k].tick - t0) * XM);
                     w (&o, "        <sound tempo=\"%s\"/>\n      </direction>\n", bpm);
                   }
             }
-          for (z = 0; z < pp->staves * 2; z++)
+          for (mi = 0, zoff = 0; mi < np; zoff += nt->parts[p + mi++].staves)
+          for (pp = &nt->parts[p + mi], z = 0; z < pp->staves * GR_VPS; z++)
             {
               const gr_nrange *r = &pp->voice[b * GR_NVOICES + z];
               if (!r->n)
                 continue;
               if (!first)
-                w (&o, "      <backup><duration>%d</duration></backup>\n", bar->len * 5);
+                w (&o, "      <backup><duration>%d</duration></backup>\n", bar->len * XM);
               first = 0;
               /* the pedal, under the lowest staff */
-              if (z == (pp->staves - 1) * 2)
+              if (z == (pp->staves - 1) * GR_VPS)
                 for (k = 0; k < pp->npedal; k++)
                   if (pp->pedal[k].bar == b)
                     {
                       w (&o, "      <direction placement=\"below\">\n        <direction-type><pedal type=\"%s\" line=\"yes\" sign=\"yes\"/></direction-type>\n",
                          pp->pedal[k].down ? "start" : "stop");
                       if (pp->pedal[k].start)
-                        w (&o, "        <offset sound=\"yes\">%d</offset>\n", pp->pedal[k].start * 5);
-                      if (pp->staves > 1)
-                        w (&o, "        <staff>%d</staff>\n", pp->staves);
+                        w (&o, "        <offset sound=\"yes\">%d</offset>\n", pp->pedal[k].start * XM);
+                      if (staves > 1)
+                        w (&o, "        <staff>%d</staff>\n", zoff + pp->staves);
                       w (&o, "        <sound damper-pedal=\"%s\"/>\n      </direction>\n", pp->pedal[k].down ? "yes" : "no");
                     }
               for (k = 0; k < r->n; k++)
@@ -435,19 +503,21 @@ int gr_musicxml_export (const gr_song *s, const char *path)
                   const gr_nevent *ev = &nt->ev[r->first + k];
                   /* (an 8va line starting or ending part way through the bar:
                      in the staff's first voice, where its notes start or end) */
-                  int st = z / 2, mid_on = !(z & 1) && ott_starts (pp, b, st) && pp->ott_start[b * 2 + st];
-                  int mid_off = !(z & 1) && ott_ends (pp, b, nt->nbars, st) && pp->ott_end[b * 2 + st];
+                  int st = z / GR_VPS, mid_on = !(z % GR_VPS) && ott_starts (pp, b, st) && pp->ott_start[b * 2 + st];
+                  int mid_off = !(z % GR_VPS) && ott_ends (pp, b, nt->nbars, st) && pp->ott_end[b * 2 + st];
                   if (mid_on && ev->start >= pp->ott_start[b * 2 + st] && (k == 0 || nt->ev[r->first + k - 1].start < pp->ott_start[b * 2 + st]))
-                    w_ottava (&o, pp, b, st, 1);
-                  w_event (&o, nt, ev, z + 1 + (z >= 2 ? 2 : 0), z / 2 + 1, pp->staves, pp->drums, pid);
+                    w_ottava (&o, pp, b, st, 1, zoff, staves);
+                  w_event (&o, nt, ev, zoff * GR_VPS + z + 1, zoff + z / GR_VPS + 1 + ev->xstaff, staves, pp->drums, pid);
                   if (mid_off && ev->start + ev->dur >= pp->ott_end[b * 2 + st]
                       && (k == 0 || nt->ev[r->first + k - 1].start + nt->ev[r->first + k - 1].dur < pp->ott_end[b * 2 + st]))
-                    w_ottava (&o, pp, b, st, 0);
+                    w_ottava (&o, pp, b, st, 0, zoff, staves);
                 }
             }
-          for (z = 0; z < pp->staves; z++)
-            if (ott_ends (pp, b, nt->nbars, z) && !pp->ott_end[b * 2 + z])
-              w_ottava (&o, pp, b, z, 0);
+          for (mi = 0, zoff = 0; mi < np; zoff += nt->parts[p + mi++].staves)
+            for (z = 0; z < nt->parts[p + mi].staves; z++)
+              if (ott_ends (&nt->parts[p + mi], b, nt->nbars, z) && !nt->parts[p + mi].ott_end[b * 2 + z])
+                w_ottava (&o, &nt->parts[p + mi], b, z, 0, zoff, staves);
+          pp = p0;
           if ((bar->rep & NR_END) || bar->ending_stop)
             {
               w (&o, "      <barline location=\"right\">");

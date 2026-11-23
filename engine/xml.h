@@ -11,6 +11,7 @@ typedef struct gx_node
   char **attr;                  /* name, value, name, value ... */
   int nattr;
   char *text;                   /* the element's own text ("" if none) */
+  char *tail;                   /* text after it, in its parent ("" if none) */
   struct gx_node *parent, *child, *last, *next;
 } gx_node;
 

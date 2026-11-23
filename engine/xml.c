@@ -120,15 +120,17 @@ static int add_attr (gx_doc *d, char *v)
 static void add_text (gx_node *n, char *s, char *e)
 {
   char *t;
-  if (n->text && *n->text)
-    return;
   for (t = s; t < e && isspace ((unsigned char) *t); t++)
     ;
-  if (t == e)
+  if (t == e || (n->text && *n->text && (!n->last || *n->last->tail)))
     return;
   e = unescape (s, e);
-  n->text = s;
   *e = 0;
+  /* (and, after a child, that child's tail: "<sym>..</sym> = 69)") */
+  if (n->last && !*n->last->tail)
+    n->last->tail = s;
+  if (!n->text || !*n->text)
+    n->text = s;
 }
 
 gx_doc *gx_parse (char *buf, size_t n)
@@ -213,6 +215,7 @@ gx_doc *gx_parse (char *buf, size_t n)
             goto bad;
           nn->name = p;
           nn->text = "";
+          nn->tail = "";
           while (p < end && !isspace ((unsigned char) *p) && *p != '>' && *p != '/')
             p++;
           q = p;

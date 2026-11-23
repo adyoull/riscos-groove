@@ -72,7 +72,8 @@ int gr_engraving_svg (const gr_engraving *e, const char *path, double px_per_sp,
             /* (the text's Latin-1, as on RISC OS: written as UTF-8, with
                XML's own characters escaped) */
             const unsigned char *t = (const unsigned char *) e->text + it->w;
-            fprintf (f, "<text x=\"%.1f\" y=\"%.1f\" font-family=\"serif\" font-size=\"%.1f\">", x0, y0, -y1 * -1 * k);
+            fprintf (f, "<text x=\"%.1f\" y=\"%.1f\" font-family=\"serif\" font-size=\"%.1f\"%s>", x0, y0, -y1 * -1 * k,
+                     it->glyph == 1 ? " font-weight=\"bold\"" : it->glyph == 2 ? " font-style=\"italic\"" : "");
             for (; *t; t++)
               if (*t == '<')
                 fputs ("&lt;", f);
@@ -80,6 +81,14 @@ int gr_engraving_svg (const gr_engraving *e, const char *path, double px_per_sp,
                 fputs ("&gt;", f);
               else if (*t == '&')
                 fputs ("&amp;", f);
+              else if (*t == GR_CH_NOTE4)
+                fputs ("\xE2\x99\xA9", f);      /* (a metronome mark's notes) */
+              else if (*t == GR_CH_NOTE2)
+                fputs ("\xF0\x9D\x85\x9E", f);
+              else if (*t == GR_CH_NOTE8)
+                fputs ("\xE2\x99\xAA", f);
+              else if (*t == GR_CH_NOTEDOT)
+                fputs (".", f);
               else if (*t >= 128)
                 fprintf (f, "%c%c", 0xC0 | (*t >> 6), 0x80 | (*t & 63));
               else

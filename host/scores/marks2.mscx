@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Groove's test score for marks the score places itself: a voice's
+     dynamic and hairpin (over its staff, as MuseScore puts them), a
+     chord whose stem the score turns down, a spread chord drawn through
+     both of the piano's staves, and a pedal shown ("con Ped.") then one hidden. -->
+<museScore version="4.20">
+  <Score>
+    <Division>480</Division>
+    <Part id="1">
+      <Staff id="1"/>
+      <trackName>Voice</trackName>
+      <Instrument id="voice"><longName>Voice</longName><Channel><program value="52"/></Channel></Instrument>
+      </Part>
+    <Part id="2">
+      <Staff id="2"/>
+      <Staff id="3"/>
+      <trackName>Piano</trackName>
+      <Instrument id="piano"><longName>Piano</longName><clef staff="2">F</clef><Channel><program value="0"/></Channel></Instrument>
+      </Part>
+    <Staff id="1">
+      <Measure><voice><TimeSig><sigN>4</sigN><sigD>4</sigD></TimeSig>
+        <Dynamic><subtype>mf</subtype></Dynamic>
+        <StaffText><text><b>Vite</b>  (inquiet)</text></StaffText>
+        <Spanner type="HairPin"><HairPin><subtype>0</subtype></HairPin><next><location><fractions>1/2</fractions></location></next></Spanner>
+        <Chord><durationType>half</durationType><Note><pitch>72</pitch><tpc>14</tpc></Note></Chord>
+        <Spanner type="HairPin"><prev><location><fractions>-1/2</fractions></location></prev></Spanner>
+        <Chord><durationType>half</durationType><Note><pitch>74</pitch><tpc>16</tpc></Note></Chord></voice></Measure>
+      <Measure><voice><Chord><durationType>whole</durationType><Note><pitch>72</pitch><tpc>14</tpc></Note></Chord></voice></Measure>
+      </Staff>
+    <Staff id="2">
+      <Measure><voice><TimeSig><sigN>4</sigN><sigD>4</sigD></TimeSig>
+        <Chord><durationType>half</durationType><StemDirection>down</StemDirection><Note><pitch>64</pitch><tpc>18</tpc></Note><Note><pitch>67</pitch><tpc>15</tpc></Note>
+          <Arpeggio><subtype>0</subtype><span>5</span></Arpeggio></Chord>
+        <Chord><durationType>half</durationType><Note><pitch>65</pitch><tpc>13</tpc></Note></Chord></voice></Measure>
+      <Measure><voice><Chord><durationType>whole</durationType><Note><pitch>64</pitch><tpc>18</tpc></Note></Chord></voice></Measure>
+      </Staff>
+    <Staff id="3">
+      <Measure><voice><TimeSig><sigN>4</sigN><sigD>4</sigD></TimeSig>
+        <Spanner type="Pedal"><Pedal><beginText>con &lt;sym&gt;keyboardPedalPed&lt;/sym&gt;</beginText><endText>&lt;sym&gt;keyboardPedalUp&lt;/sym&gt;</endText><lineVisible>0</lineVisible></Pedal><next><location><fractions>1/2</fractions></location></next></Spanner>
+        <Chord><durationType>half</durationType><Note><pitch>48</pitch><tpc>14</tpc></Note><Note><pitch>55</pitch><tpc>15</tpc></Note></Chord>
+        <Spanner type="Pedal"><prev><location><fractions>-1/2</fractions></location></prev></Spanner>
+        <Spanner type="Pedal"><Pedal><visible>0</visible></Pedal><next><location><fractions>1/2</fractions></location></next></Spanner>
+        <Chord><durationType>half</durationType><Note><pitch>53</pitch><tpc>13</tpc></Note></Chord></voice></Measure>
+      <Measure><voice>
+        <Spanner type="Pedal"><prev><location><fractions>-1/2</fractions></location></prev></Spanner>
+        <Chord><durationType>whole</durationType><Note><pitch>48</pitch><tpc>14</tpc></Note></Chord></voice></Measure>
+      </Staff>
+    </Score>
+  </museScore>

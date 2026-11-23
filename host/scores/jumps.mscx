@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Groove's test score for jumps (as MuseScore 4 writes them): C, D (Fine),
+     E (D.C. al Fine), a section break; F (segno), G (To Coda), A (D.S. al
+     Coda), B (Coda). Played: C D E C D | F G A F G B. -->
+<museScore version="4.20">
+  <Score>
+    <Division>480</Division>
+    <Part id="1">
+      <Staff id="1"/>
+      <trackName>Flute</trackName>
+      <Instrument id="flute"><longName>Flute</longName><trackName>Flute</trackName><Channel><program value="73"/></Channel></Instrument>
+      </Part>
+    <Staff id="1">
+      <Measure>
+        <voice>
+          <TimeSig><sigN>4</sigN><sigD>4</sigD></TimeSig>
+          <Chord><durationType>whole</durationType><Note><pitch>60</pitch></Note></Chord>
+          </voice>
+        </Measure>
+      <Measure>
+        <Marker><style>Repeat Text Right</style><text>Fine</text><label>fine</label></Marker>
+        <voice>
+          <Chord><durationType>whole</durationType><Note><pitch>62</pitch></Note></Chord>
+          </voice>
+        </Measure>
+      <Measure>
+        <Jump><text>D.C. al Fine</text><jumpTo>start</jumpTo><playUntil>fine</playUntil><continueAt></continueAt></Jump>
+        <LayoutBreak><subtype>section</subtype></LayoutBreak>
+        <voice>
+          <Chord><durationType>whole</durationType><Note><pitch>64</pitch></Note></Chord>
+          </voice>
+        </Measure>
+      <Measure>
+        <Marker><text>segno</text><label>segno</label></Marker>
+        <voice>
+          <Chord><durationType>whole</durationType><Note><pitch>65</pitch></Note></Chord>
+          </voice>
+        </Measure>
+      <Measure>
+        <Marker><text>To Coda</text><label>coda</label></Marker>
+        <voice>
+          <Chord><durationType>whole</durationType><Note><pitch>67</pitch></Note></Chord>
+          </voice>
+        </Measure>
+      <Measure>
+        <Jump><text>D.S. al Coda</text><jumpTo>segno</jumpTo><playUntil>coda</playUntil><continueAt>codab</continueAt></Jump>
+        <voice>
+          <Chord><durationType>whole</durationType><Note><pitch>69</pitch></Note></Chord>
+          </voice>
+        </Measure>
+      <Measure>
+        <Marker><text>Coda</text><label>codab</label></Marker>
+        <voice>
+          <Chord><durationType>whole</durationType><Note><pitch>71</pitch></Note></Chord>
+          </voice>
+        </Measure>
+      </Staff>
+    </Score>
+  </museScore>

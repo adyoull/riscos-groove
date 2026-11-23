@@ -18,7 +18,9 @@ enum
   EK_LINE,                      /* from x0,y0 to x1,y1, w thick (a filled rectangle if level or upright) */
   EK_BEAM,                      /* a beam from x0,y0 to x1,y1 (its top edge), w thick */
   EK_TIE,                       /* a tie (a thin crescent) from x0,y0 to x1,y1, bulging up if w > 0 */
-  EK_TEXT,                      /* text (score->text + w) with its baseline's left at x0,y0, height y1 */
+  EK_TEXT,                      /* text (score->text + w) with its baseline's left at x0,y0, height y1;
+                                   bold if glyph is 1, italic if 2; bytes GR_CH_NOTE4.. in it
+                                   are a metronome mark's notes (GL_MET_*) */
   EK_SLUR,                      /* a slur from x0,y0 to x1,y1, its middle |w| above them (w > 0) or below */
   EK_BAR                        /* bar w's box, x0,y0 (bottom left) to x1,y1: for the playhead and clicks */
 };

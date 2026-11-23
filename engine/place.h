@@ -6,15 +6,19 @@
 
 /* A note in song ticks from the import's start. key is the MIDI note, or
    on a drum track the drum row. */
-typedef struct { int start, end, key, vel; } gr_pnote;
+typedef struct { int start, end, key, vel, wr, tie1; } gr_pnote;   /* wr: gr_note.wr | gr_note.spell << 8; tie1: gr_note's */
+/* (key -1: no note, only a place a region must cover, for a mark there) */
 
 /* Put n notes on track t, from tick 'from' (a bar start): a region per
-   four bars of the song's own bars that have notes (one-bar regions where
-   it's busy). A region never ends while one of its notes is still
+   four bars of the song's own bars that have notes (fewer where it's
+   busy; see gr_place_chunk). A region never ends while one of its notes is still
    sounding, so no note is cut short. Returns 0, or -1 when the song is
    full (*full_at = the tick it got to). Notes that don't fit in a pattern
    are counted in *dropped. */
 int gr_place_notes (gr_song *s, int t, const gr_pnote *m, int n, int from, int *full_at, int *dropped);
+/* Regions of this many bars rather than four (at least four), for a long
+   import that would fill the song otherwise; busy bars as many as fit. */
+void gr_place_chunk (int bars);
 
 /* A controller event (gr_ctl's type and value) in song ticks from the
    import's start. */

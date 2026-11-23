@@ -1,5 +1,180 @@
 # Changelog
 
+## 0.4.3 (23 November 2026)
+
+- Groove started on a machine with alignment exceptions turned on (the
+  usual setting on a Raspberry Pi with RISC OS 5) only if they had been
+  turned off first (by !AlignEx, or another program such as !Iris).
+  Some of UnixLib's data, built into Groove, had no alignment of its
+  own and happened to land at an address no word can be read from, so
+  Groove stopped as it started. Every version until now had this. The
+  build now uses riscos-crossdev 1.13, whose UnixLib has its data
+  word-aligned, refuses an older one, and checks every piece of data in
+  the program is aligned. Reported by Geofrey Baxendale.
+- MuseScore and MusicXML scores are written in the Score window as the
+  score writes them, rather than worked out again from how the notes
+  are played (after Paul's report that imported scores were close to
+  unreadable):
+  - each note on the staff and in the voice it was written in (a
+    piano's notes no longer jump between staves by pitch);
+  - its written value: a staccato crotchet is a crotchet with a dot,
+    not a quaver and a rest; a syncopated note isn't cut in two; notes
+    the score tied together stay tied, where it tied them;
+  - its spelling (C flat, E sharp), the score's key signatures, its
+    clefs and clef changes, and a transposing instrument's
+    transposition (a bass clarinet is written an octave and a tone up);
+  - a pickup (anacrusis) is a short first bar, numbered 0, and the
+    bars after it start where the score's do (they were a pickup's
+    length late);
+  - a bar the score makes shorter or longer than its time signature
+    keeps its length;
+  - grace notes, pauses (fermatas), glissandos, trills, mordents,
+    turns, tenuto lines and marcato accents are shown;
+  - cross-staff notes, and a note under an 8va line at the pitch it
+    sounds (it was an octave low);
+  - the name the score prints for a part;
+  - its rests as the score has them (in a second voice too, and none
+    where the score hides one);
+  - voices in MuseScore 2 files, a third voice, notes moved to the
+    other staff, and a unison two voices share (each written);
+  - tuplets as the score groups them (semiquaver triplets, sextuplets,
+    quintuplets, duplets), double-dotted notes;
+  - clef changes inside a bar (a small clef before the note), and
+    tremolos (through a stem, or between two notes);
+  - a score that changes time signature every bar (Groove had room
+    for 32 changes; now 256), and a first bar longer than its time
+    signature;
+  - dynamics under the staff they're for;
+  - the words (lyrics) under their notes, every verse, with hyphens
+    between syllables;
+  - up to four voices on a staff, each with its own rhythm (stems up
+    in the first and third, down in the second and fourth), and a
+    second voice's own rests;
+  - a note tied into another voice, or over other notes to a later one
+    (as an arpeggio's notes ring into a chord), tied as the score ties
+    it; notes the score shows but doesn't play (cue notes, another
+    verse's notes) written;
+  - six quavers over two beats as one sextuplet (6), and a sextuplet
+    in a beat as a 6; demisemiquaver triplets, and triplets in part of
+    a beat with straight notes in the rest; dotted notes in triplets;
+    rests in tuplets; tremolos between dotted notes; 64ths and 128ths;
+  - cue notes small, and notes the score hides not shown (they play);
+  - notes beamed (or not: flags, as songs' voices often are) as the
+    score beams them; a bracket over a tuplet that isn't beamed;
+  - the score's words over and under the staff ("Andante.",
+    "p sostenuto", "rit.", "D.C. al Fine"), and C and cut C time
+    signatures;
+  - the words spaced so they don't run into each other, and a rest
+    in a second voice clear of the other voice's notes;
+  - a staff with a time signature of its own (3/8 over the piano's
+    9/16) in time with the rest;
+  - pedal marks, dynamics, hairpins and slurs the score hides not
+    shown; quavers in 4/4 beamed four to a group, as MuseScore does,
+    where there's nothing shorter;
+  - no metronome mark ("♩ = 92") where the score gives its tempo only
+    in words ("Andante"), or none at all, and the words over a
+    multi-bar rest (which words now start, as in MuseScore);
+  - a tempo's words in bold, with its metronome mark written as the
+    score writes it ("Molto moderato. (♩ = 69)", the dotted crotchets
+    and minims too), and words at the same place over each other
+    rather than on top of each other;
+  - a part on three or more staves (a piano with a staff over its two
+    hands, an organ's pedals): on tracks of one or two staves, joined
+    as one instrument in the Score window (one brace, bar lines
+    through, its name once; an organ's pedals apart from the brace),
+    and exported as one part. Selecting either track shows them all.
+    Its staves with nothing on them are kept;
+  - a long note the score writes as three or more notes tied together
+    in a bar, written that way (it was two);
+  - chords the score moves to the other staff beamed with the rest of
+    their voice, the beam between the staves; notes it writes but
+    doesn't play in bars where nothing is played;
+  - stems the score turns up or down itself (on a chord or a whole
+    beam), and a hand's chords moved onto the other staff kept in a
+    voice of their own there, not merged into that hand's chords;
+  - a spread chord's wavy line drawn through both of a piano's staves
+    when the score spans it (or draws it on down that far), as one
+    line, not a stretched one, in MusicXML too (where a score writes
+    a spread chord on each staff, lined up, as MuseScore does);
+  - dynamics and hairpins over the staff where the score puts them
+    (a voice's, as MuseScore does);
+  - the pedal as the score shows it: a "Ped." without its star where
+    it has none, pedalling it hides ("simile") not shown, its line
+    and hooks where it draws one, its words ("Con Ped.") as it writes
+    them, and over the staff where it puts it there;
+  - the gap between a piano's two staves fitted place by place, as
+    MuseScore fits it, not made room for the tallest thing anywhere
+    in the line (a dynamic between the staves in one bar and high
+    left-hand notes in another no longer push them far apart);
+  - words over the staff written partly in bold or italics ("**Vite**
+    (inquiet, fiévreux)", "**Poco rit**.") in the score's order, with
+    the space between (the plain part came first, run together);
+  - tuplets as the score writes them: where it puts each one (off
+    the beat too), any ratio (seven in the time of six, four in the
+    time of six, duplets, sextuplets over half a beat), its notes'
+    written values under one bracket, and its number and bracket
+    only where the score shows them (most of a song's are hidden);
+    they used to be fitted to a beat's grid, and those that didn't
+    fit were written as dotted notes and ties. MusicXML export:
+    10,080 divisions a crotchet, so a tuplet's notes add up exactly;
+  - breves (double whole notes) in long bars (4/2...), as a breve
+    rather than two tied semibreves, and a breve's rest;
+  - two-note tremolos in a tuplet (each written twice as long as it
+    plays): in their place, as the score writes them;
+  - a MusicXML part with a time signature of its own, shorter than the
+    others' (a voice's 4/4 over the piano's 12/8, as MuseScore exports
+    a staff's own time signature): stretched to fill the bar, as in
+    MuseScore, not running out of step with the other parts; the bar's
+    time signature the longer one (12/8, not 3/2);
+  - a drum part as the score's own kit writes it: each drum on its line
+    there, a staff of one line where it has one, and its notes' lengths
+    as written (they were all a crotchet or less);
+  - a score shown in concert pitch (MuseScore's setting) written in
+    concert pitch: a clarinet's notes as they sound;
+  - MuseScore 3's multi-measure rests of one bar no longer add a bar;
+  - a beam flat over a zig-zag figure (a middle note as high, or as
+    low, as the end note nearer the beam), as MuseScore draws it;
+  - a tenor's (or a guitar's) treble clef with an 8 under it: the notes
+    an octave up on it, as MuseScore writes them.
+  - bars the score writes out again are written out again in the
+    Score window, and only the score's own repeats are written as
+    repeats (with each verse's words under the bars played again).
+  Checked against MuseScore 4's own reading of 1,352 songs (OpenScore's
+  Lieder), 121 string quartets (OpenScore's), 507 of MuseScore's own
+  test scores and the songs as MusicXML: in the songs, the bars written
+  exactly as MuseScore writes them went from 22% to 99%, and notes in
+  the right place from 64% to 99.7%; in the quartets, 99.6% of bars;
+  the songs as MusicXML, 98.7%; MuseScore's test scores, 96%.
+- Scores are played as MuseScore plays them: D.C. and D.S., al Fine
+  and al Coda (in MusicXML too); a D.C. goes back to the start of its
+  own movement (MuseScore's section), and a repeat with no start goes
+  back to the movement's start or the end of the repeat before it.
+  Measure repeats (the sign to play the last one, two or four
+  measures again) are played and written out. MuseScore 3's
+  multi-measure rests no longer add bars, and a long
+  score (a whole quartet, 2,000 bars) fits in the song (it stopped
+  part way: "The song is full"). A D.S. that goes on at a coda in a
+  second ending plays it (Beethoven's Op. 130 left out its coda's first
+  bar); a verse's
+  ending that runs on part way into the next bar covers that bar; an
+  ending with no repeat of its own and other endings straight after
+  goes on to the next ending of the same number, and the endings are
+  counted through the bars between them (Satie's "Je te veux" and
+  "Tendrement": verses with "1.", "2." and "Pour finir" endings).
+- A bar longer than 32 beats of its time signature (a cadenza bar of
+  79/64 in d'Indy's first quartet) keeps its length; the music after
+  it was a beat or so out. A bar the score makes longer or shorter
+  than its time signature has no time signature written for it (nor
+  the one after it), as MuseScore writes none; and a score that ends
+  with a short bar has no empty bar after it.
+- MusicXML: a hand's notes written on the other hand's staff (as
+  MuseScore exports a piano's crossing notes) are kept in their own
+  voice there, rather than merged into that staff's (whose long notes
+  were cut up and tied around them).
+- Score window: beams lie as they should (all but a group's first
+  stem were moved twice as far), slope less, and quavers in 3/8 are
+  beamed together.
+
 ## 0.4.2 (20 November 2026)
 
 - The sustain pedal with SoundFont sounds: a key struck again while the

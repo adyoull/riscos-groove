@@ -65,6 +65,10 @@ typedef struct
   int nmeters;
   gr_meter meters[GR_MAX_METERS];
   int ntempos;
+  int nkeysigs;
+  gr_keysig keysigs[GR_MAX_KEYSIGS];
+  int pickup;
+  int tempo_hidden;
 } song_head;
 
 static int take (const gr_song *s, snap *out)
@@ -79,6 +83,10 @@ static int take (const gr_song *s, snap *out)
   h.nmeters = s->nmeters;
   memcpy (h.meters, s->meters, sizeof h.meters);
   h.ntempos = s->ntempos;
+  h.nkeysigs = s->nkeysigs;
+  h.pickup = s->pickup;
+  h.tempo_hidden = s->tempo_hidden;
+  memcpy (h.keysigs, s->keysigs, sizeof h.keysigs);
   put (&b, &h, sizeof h);
   put (&b, s->tempos, (size_t) s->ntempos * sizeof s->tempos[0]);
   for (i = 0; i < s->ntracks; i++)
@@ -121,6 +129,12 @@ static int take (const gr_song *s, snap *out)
         put_int (&b, c->rate);
       }
   put_int (&b, -1);
+  put_int (&b, s->nlyrics);
+  if (s->nlyrics)
+    put (&b, s->lyrics, (size_t) s->nlyrics * sizeof s->lyrics[0]);
+  put_int (&b, s->nsrcbar);
+  if (s->nsrcbar)
+    put (&b, s->srcbar, (size_t) s->nsrcbar * sizeof s->srcbar[0]);
   if (b.fail)
     {
       free (b.p);
@@ -158,6 +172,10 @@ static void give (const snap *sn, gr_song *s)
   s->master = h.master;
   s->nmeters = h.nmeters;
   memcpy (s->meters, h.meters, sizeof s->meters);
+  s->pickup = h.pickup;
+  s->tempo_hidden = h.tempo_hidden;
+  s->nkeysigs = h.nkeysigs >= 0 && h.nkeysigs <= GR_MAX_KEYSIGS ? h.nkeysigs : 0;
+  memcpy (s->keysigs, h.keysigs, sizeof s->keysigs);
   s->ntempos = h.ntempos >= 0 && h.ntempos <= GR_MAX_TEMPOS ? h.ntempos : 0;
   get (&r, s->tempos, (size_t) s->ntempos * sizeof s->tempos[0]);
   s->ntracks = h.ntracks;
@@ -212,6 +230,38 @@ static void give (const snap *sn, gr_song *s)
           c->rate = rate;
         }
     }
+  /* the words */
+  {
+    int n = get_int (&r);
+    s->nlyrics = 0;
+    if (n > 0 && n > s->lyriccap && n <= 1000000)
+      {
+        gr_lyric *a = realloc (s->lyrics, (size_t) n * sizeof *a);
+        if (a)
+          {
+            s->lyrics = a;
+            s->lyriccap = n;
+          }
+      }
+    if (n > 0 && n <= s->lyriccap)
+      {
+        get (&r, s->lyrics, (size_t) n * sizeof s->lyrics[0]);
+        s->nlyrics = n;
+      }
+  }
+  /* the score's measures, bar by bar */
+  {
+    int n = get_int (&r);
+    unsigned short *a = n > 0 && n <= 65535 ? realloc (s->srcbar, (size_t) n * sizeof *a) : NULL;
+    if (a)
+      {
+        s->srcbar = a;
+        s->nsrcbar = n;
+        get (&r, s->srcbar, (size_t) n * sizeof s->srcbar[0]);
+      }
+    else
+      s->nsrcbar = 0;
+  }
   /* A region whose recording has gone can't come back. */
   for (i = 0; i < GR_MAX_REGIONS; i++)
     if (s->regions[i].used && s->regions[i].clip >= 0

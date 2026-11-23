@@ -291,6 +291,8 @@ static int add (notes *l, int start, int end, int key)
   l->n[l->count].end = end;
   l->n[l->count].key = key;
   l->n[l->count].vel = 100;
+  l->n[l->count].wr = 0;
+  l->n[l->count].tie1 = 0;
   l->count++;
   return 0;
 }

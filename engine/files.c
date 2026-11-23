@@ -176,7 +176,9 @@ static void put_name (FILE *f, const char *name)
   fputc ('"', f);
 }
 
-static const char *get_name (const char *p, char *out)
+#define get_name(p, out) get_name_n (p, out, sizeof (out))
+
+static const char *get_name_n (const char *p, char *out, size_t size)
 {
   int n = 0;
   while (*p == ' ') p++;
@@ -186,7 +188,7 @@ static const char *get_name (const char *p, char *out)
       return p;
     }
   for (p++; *p && *p != '"'; p++)
-    if (n < GR_NAME - 1)
+    if ((size_t) n + 1 < size)
       out[n++] = *p;
   out[n] = 0;
   return *p ? p + 1 : p;
@@ -205,10 +207,44 @@ int gr_song_save (const gr_song *s, const char *path)
      Groove reads it unchanged.) */
   for (i = 0; i < s->nmeters; i++)
     if (i > 0 || s->meters[i].num != 4 || s->meters[i].den != 4)
-      fprintf (f, "meter %d %d %d\n", s->meters[i].bar, s->meters[i].num, s->meters[i].den);
+      {
+        if (s->meters[i].symbol)
+          fprintf (f, "meter %d %d %d %d\n", s->meters[i].bar, s->meters[i].num, s->meters[i].den, s->meters[i].symbol);
+        else
+          fprintf (f, "meter %d %d %d\n", s->meters[i].bar, s->meters[i].num, s->meters[i].den);
+      }
+  /* A score's words (older Groove ignores them). */
+  for (i = 0; i < s->nlyrics; i++)
+    {
+      const gr_lyric *l = &s->lyrics[i];
+      fprintf (f, "lyric %d %d %d %d %d ", l->track, l->tick, l->staff, l->verse, l->syllabic);
+      put_name (f, l->text);
+      fputc ('\n', f);
+    }
+  /* A pickup and key signatures from an imported score (older Groove ignores them). */
+  if (s->pickup > 0)
+    fprintf (f, "pickup %d\n", s->pickup);
+  /* ... and its measures, bar by bar (32 a line, from a bar) */
+  for (i = 0; i < s->nsrcbar; i += 32)
+    {
+      int j;
+      fprintf (f, "srcbar %d", i);
+      for (j = i; j < i + 32 && j < s->nsrcbar; j++)
+        fprintf (f, " %d", s->srcbar[j]);
+      fputc ('\n', f);
+    }
+  for (i = 0; i < s->nkeysigs; i++)
+    fprintf (f, "keysig %d %d %d\n", s->keysigs[i].bar, s->keysigs[i].fifths, s->keysigs[i].minor);
   /* Tempo changes after the start (older Groove ignores them). */
   for (i = 0; i < s->ntempos; i++)
-    fprintf (f, "tempo_at %d %.3f\n", s->tempos[i].tick, (double) s->tempos[i].bpm);
+    {
+      if (s->tempos[i].hidden)
+        fprintf (f, "tempo_at %d %.3f 1\n", s->tempos[i].tick, (double) s->tempos[i].bpm);
+      else
+        fprintf (f, "tempo_at %d %.3f\n", s->tempos[i].tick, (double) s->tempos[i].bpm);
+    }
+  if (s->tempo_hidden)
+    fprintf (f, "tempo_hidden 1\n");
   for (i = 0; i < s->ntracks; i++)
     {
       const gr_track *t = &s->tracks[i];
@@ -216,6 +252,18 @@ int gr_song_save (const gr_song *s, const char *path)
       put_name (f, t->name);
       fprintf (f, " %.2f %.2f %.2f %d %d %d %d %d %d %d %d\n", t->vol, t->pan, t->reverb, t->mute, t->solo,
                t->gm, t->midi_out != 0, t->channel, t->bank_msb, t->bank_lsb, t->program);
+      if (t->written)                     /* (older Groove ignores it) */
+        fprintf (f, "written %d %d %d %d %d\n", t->wtranspose, t->wclef[0], t->wclef[1], t->written, t->wpedal);
+      if (t->joined)
+        fprintf (f, "joined %d\n", t->joined);
+      {
+        int k;
+        for (k = 0; k < 128; k++)
+          if (t->drumline[k])
+            fprintf (f, "drumline %d %d\n", k, t->drumline[k] - 64);
+      }
+      if (t->wlines == 1)
+        fprintf (f, "lines 1\n");
     }
   for (i = 0; i < GR_MAX_PATTERNS; i++)
     {
@@ -226,8 +274,13 @@ int gr_song_save (const gr_song *s, const char *path)
       put_name (f, p->name);
       fprintf (f, " %d\n", p->len);
       for (k = 0; k < p->nnotes; k++)
-        fprintf (f, "n %d %d %d %d\n", p->notes[k].tick, p->notes[k].len,
-                 p->notes[k].pitch, p->notes[k].vel);
+        if (p->notes[k].wr || p->notes[k].spell || p->notes[k].tie1)   /* (how a score wrote it: older
+                                                                          Groove ignores it) */
+          fprintf (f, "n %d %d %d %d %d %d %d\n", p->notes[k].tick, p->notes[k].len,
+                   p->notes[k].pitch, p->notes[k].vel, p->notes[k].wr, p->notes[k].spell, p->notes[k].tie1);
+        else
+          fprintf (f, "n %d %d %d %d\n", p->notes[k].tick, p->notes[k].len,
+                   p->notes[k].pitch, p->notes[k].vel);
       for (k = 0; k < p->nctls; k++)
         fprintf (f, "c %d %d %d\n", p->ctls[k].tick, p->ctls[k].type, p->ctls[k].value);
       for (k = 0; k < p->nmarks; k++)      /* (written marks: older Groove skips them) */
@@ -281,8 +334,17 @@ int gr_song_load (gr_song *s, const char *path)
       if (version == 0) break;                  /* not a song file */
       if (cur)
         {
-          if (sscanf (line, "n %d %d %d %d", &a, &b, &c, &d) == 4)
-            gr_pattern_add_note (cur, a, b, c, d);
+          int sp = 0, t1 = 0;
+          if ((g = sscanf (line, "n %d %d %d %d %d %d %d", &a, &b, &c, &d, &e, &sp, &t1)) >= 4)
+            {
+              int at = gr_pattern_add_note (cur, a, b, c, d);
+              if (at >= 0 && g >= 5)
+                {
+                  cur->notes[at].wr = (uint8_t) e;
+                  cur->notes[at].spell = (uint8_t) (g >= 6 ? sp : 0);
+                  cur->notes[at].tie1 = (int16_t) (g >= 7 && ((t1 > 0 && t1 < b) || (t1 >= GR_TIE_BOTH && t1 < 0)) ? t1 : 0);
+                }
+            }
           else if (sscanf (line, "c %d %d %d", &a, &b, &c) == 3)
             gr_pattern_set_ctl (cur, a, b, c);
           else if (sscanf (line, "m %d %d %d %d %d %d", &a, &b, &c, &d, &e, &g) == 6 && c > 0 && c < GR_MK_KINDS)
@@ -303,8 +365,68 @@ int gr_song_load (gr_song *s, const char *path)
         { s->loop_on = a; s->loop_start = b; s->loop_end = c; }
       else if (sscanf (line, "metronome %d", &a) == 1) s->metronome = a;
       else if (sscanf (line, "master %f", &x) == 1) s->master = x;
-      else if (sscanf (line, "meter %d %d %d", &a, &b, &c) == 3) gr_set_meter (s, a, b, c);
-      else if (sscanf (line, "tempo_at %d %f", &a, &x) == 2) gr_tempo_add (s, a, x);
+      else if (sscanf (line, "meter %d %d %d", &a, &b, &c) == 3)
+        {
+          gr_set_meter (s, a, b, c);
+          if (sscanf (line, "meter %d %d %d %d", &a, &b, &c, &d) == 4)
+            gr_set_meter_symbol (s, a, d);
+        }
+      else if (sscanf (line, "keysig %d %d %d", &a, &b, &c) == 3) gr_set_keysig (s, a, b, c);
+      else if (sscanf (line, "lyric %d %d %d %d %d", &a, &b, &c, &d, &e) == 5)
+        {
+          char word[GR_LYRIC];
+          const char *q = strchr (line, '"');
+          get_name (q ? q : "", word);
+          gr_lyric_add (s, a, b, c, d, e, word);
+        }
+      else if (sscanf (line, "pickup %d", &a) == 1) s->pickup = a > 0 && a < 16 * GR_BAR ? a : 0;
+      else if (sscanf (line, "srcbar %d", &a) == 1)
+        {
+          /* (each value the measure + 1, from bar a) */
+          const char *q = line + 7;
+          int v, used, k2 = 0;
+          while (*q == ' ')
+            q++;
+          while (*q && *q != ' ')
+            q++;
+          while (sscanf (q, "%d%n", &v, &used) == 1 && k2 < 64)
+            {
+              if (gr_set_srcbar (s, a + k2, v - 1))
+                break;
+              q += used;
+              k2++;
+            }
+        }
+      else if (sscanf (line, "lines %d", &a) == 1 && s->ntracks > 0)
+        s->tracks[s->ntracks - 1].wlines = a == 1;
+      else if (sscanf (line, "drumline %d %d", &a, &b) == 2 && s->ntracks > 0 && a >= 0 && a < 128 && b > -60 && b < 60)
+        s->tracks[s->ntracks - 1].drumline[a] = (unsigned char) (b + 64);
+      else if (sscanf (line, "joined %d", &a) == 1 && s->ntracks > 1)
+        s->tracks[s->ntracks - 1].joined = a == GR_JOIN_BRACE || a == GR_JOIN_BARS ? a : GR_JOIN_NONE;
+      else if (sscanf (line, "written %d %d %d", &a, &b, &c) == 3 && s->ntracks > 0)
+        {
+          gr_track *t = &s->tracks[s->ntracks - 1];
+          t->written = 1;
+          t->wtranspose = a < -48 ? -48 : a > 48 ? 48 : a;
+          t->wclef[0] = b >= 0 && b <= 6 ? b : 0;
+          t->wclef[1] = c >= 0 && c <= 6 ? c : 0;
+          /* (how it's written, and whether its pedalling is shown: newer Groove) */
+          if (sscanf (line, "written %d %d %d %d %d", &a, &b, &c, &d, &e) == 5)
+            {
+              t->written = d == 2 ? 2 : 1;
+              t->wpedal = e != 0;
+            }
+        }
+      else if (sscanf (line, "tempo_at %d %f", &a, &x) == 2)
+        {
+          int hd = 0, q;
+          sscanf (line, "tempo_at %*d %*f %d", &hd);
+          gr_tempo_add (s, a, x);
+          for (q = 0; q < s->ntempos; q++)
+            if (s->tempos[q].tick == a)
+              s->tempos[q].hidden = hd != 0;
+        }
+      else if (sscanf (line, "tempo_hidden %d", &a) == 1) s->tempo_hidden = a != 0;
       else if (sscanf (line, "track %d %d", &a, &b) == 2)
         {
           int t;
@@ -379,6 +501,7 @@ int gr_song_load (gr_song *s, const char *path)
   fclose (f);
   if (version == 0)
     {
+      gr_song_free (s);
       gr_song_init (s);
       return -1;
     }
