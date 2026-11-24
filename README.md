@@ -10,7 +10,7 @@ can also use a SoundFont's 128 General MIDI instruments and drum kits.
 
 ![Groove: three loops in a song, with the loop browser](docs/guide/images/loops-dropped.png)
 
-**Status: 0.4.3, an early version.** Tested on a Raspberry Pi 4 with RISC OS
+**Status: 0.4.4, an early version.** Tested on a Raspberry Pi 4 with RISC OS
 5.31, and in RISC OS 5.31-5 under emulation on Linux.
 
 ## What it does
@@ -148,7 +148,7 @@ keyboard:
 
 ## Installing
 
-1. Download `Groove-0.4.3.zip` from the release page and unzip it with SparkFS
+1. Download `Groove-0.4.4.zip` from the release page and unzip it with SparkFS
    or PackMan's unzip, so the files keep their RISC OS file types.
 2. Copy `!Groove` to wherever you keep your applications.
 3. For SoundFont sounds, install **SoftMIDI** from PackMan, and open the

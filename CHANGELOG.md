@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.4.4 (not released yet)
+## 0.4.4 (24 November 2026)
 
 - The Score window zooms out to 25% (it went no smaller than 60%), so a
   whole orchestral score shows many bars to a line: 25%, 30%, 40%, 50%,

@@ -19,7 +19,7 @@
 
 #define APP_NAME     "Groove"
 #define APP_VERSION  "0.4.4"
-#define APP_DATE     "23-Nov-2026"
+#define APP_DATE     "24-Nov-2026"
 #define TASK_WORD    0x4B534154
 
 #define FILETYPE_SONG  0xFFF       /* Text, until a type is allocated */
