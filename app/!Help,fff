@@ -1,4 +1,4 @@
-Groove 0.4.3 for RISC OS
+Groove 0.4.4 for RISC OS
 ==============================
 
 A music studio: drag loops into a song, play instruments
@@ -136,7 +136,8 @@ Score window
   F6 (or Menu > Score) shows the selected track written out as music,
   the same way as the MusicXML export. The bar playing is lit, and the
   window follows it if Follow playhead is on. Click a bar to move the
-  playhead there; + and - change the size. It's for reading: edit notes
+  playhead there; + and - (or Ctrl and the scroll wheel, or Zoom on its
+  menu) change the size, from 25% to 160%. It's for reading: edit notes
   in the Editor.
   A part played in (or from a MIDI file) is marked from the notes:
   dynamics (pp to ff) from

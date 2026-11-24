@@ -18,7 +18,7 @@
 #include "layout.h"
 
 #define APP_NAME     "Groove"
-#define APP_VERSION  "0.4.3"
+#define APP_VERSION  "0.4.4"
 #define APP_DATE     "23-Nov-2026"
 #define TASK_WORD    0x4B534154
 
@@ -125,6 +125,10 @@ void score_close (void);
 void score_redraw (int *b);
 void score_click (int *b);
 int  score_key (int code);
+void score_set_zoom (int i);                   /* zoom i of score_zoom_pc's */
+int  score_zoom (void);                        /* which zoom */
+int  score_zoom_pc (int i);                    /* zoom i's percentage (-1 past the last) */
+void score_scroll (int *b);                    /* a Scroll_Request: Ctrl + the wheel zooms */
 void score_tick (void);                        /* on null events: the playing bar, the selection */
 void score_changed (void);                     /* the song changed */
 void score_print (void);                       /* Song > Print score, Ctrl-P */
@@ -136,7 +140,6 @@ void score_set_concert (int on);
 int  score_repeats (void);                     /* music played again written once, in repeats */
 void score_set_repeats (int on);
 void app_score_menu (int x, int y);            /* the Score window's menu */
-int  score_zoom (void);                        /* percent */
 
 /* arrange.c */
 int  arrange_create (void);

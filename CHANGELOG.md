@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.4 (not released yet)
+
+- The Score window zooms out to 25% (it went no smaller than 60%), so a
+  whole orchestral score shows many bars to a line: 25%, 30%, 40%, 50%,
+  60%, 80%, 100%, 130% and 160%. A Zoom submenu on the Score window's
+  menu lists them, and Ctrl with the scroll wheel zooms in and out, as
+  well as + and -. The same part of the score stays in view, and the
+  words (tempo, dynamics, lyrics, part names) shrink with the music.
+  Asked for by Paul.
+
 ## 0.4.3 (23 November 2026)
 
 - Groove started on a machine with alignment exceptions turned on (the

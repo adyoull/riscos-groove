@@ -223,7 +223,8 @@ enum { MENU_NONE, MENU_ICONBAR, MENU_MAIN, MENU_SOUND, MENU_LANE, MENU_SCORE };
 static const int lane_types[] = { 1, 2, 7, 10, 11, 64, 71, 74, 91, 93, GR_CTL_BEND, GR_CTL_PRESSURE, GR_CTL_PROGRAM };
 #define NLANE ((int) (sizeof lane_types / sizeof lane_types[0]))
 static int m_lane[7 + 6 * (NLANE + 1)], m_lane_cc[7 + 6];
-static int m_score[7 + 6 * 6];
+static int m_score[7 + 6 * 7], m_zoom[7 + 6 * 12];
+static char zoom_text[12][8];
 static char lane_text[NLANE][40], lane_cc_buf[4];
 static int open_menu = MENU_NONE, menu_x, menu_y;
 static int m_iconbar[MENU_WORDS (7)];
@@ -406,10 +407,20 @@ static void build_main_menu (void);
 static void build_score_menu (void)
 {
   menu_builder b;
+  int i;
+  /* Zoom: its sizes, the one shown ticked (+ and -, Ctrl + the wheel too) */
+  menu_begin (&b, m_zoom, "Zoom");
+  for (i = 0; i < 12 && score_zoom_pc (i) > 0; i++)
+    {
+      snprintf (zoom_text[i], sizeof zoom_text[i], "%d%%", score_zoom_pc (i));
+      menu_add (&b, zoom_text[i], i == score_zoom () ? MI_TICK : 0, NULL, 0);
+    }
+  menu_end (&b);
   menu_begin (&b, m_score, "Score");
   menu_add (&b, "Full score", score_full () ? MI_TICK : 0, NULL, 0);
   menu_add (&b, "Concert pitch", score_concert () ? MI_TICK : 0, NULL, 0);
-  menu_add (&b, "Repeats", (score_repeats () ? MI_TICK : 0) | MI_DOTTED, NULL, 0);
+  menu_add (&b, "Repeats", score_repeats () ? MI_TICK : 0, NULL, 0);
+  menu_add (&b, "Zoom", MI_DOTTED, m_zoom, 0);
   menu_add (&b, "Print score       ^P", 0, NULL, 0);
   menu_add (&b, "Print parts", MI_DOTTED, NULL, 0);
   menu_add (&b, "Main menu", 0, m_main, 0);
@@ -765,9 +776,10 @@ static void menu_selection (int *sel)
         case 0: score_set_full (!score_full ()); break;
         case 1: score_set_concert (!score_concert ()); break;
         case 2: score_set_repeats (!score_repeats ()); break;
-        case 3: score_print (); break;
-        case 4: score_print_parts (); break;
-        case 5:
+        case 3: if (sel[1] >= 0) score_set_zoom (sel[1]); break;
+        case 4: score_print (); break;
+        case 5: score_print_parts (); break;
+        case 6:
           {
             int k;
             for (k = 0; k < 9 && sel[k] >= 0; k++)
@@ -1411,7 +1423,12 @@ int main (void)
           break;
         case EV_KEY: key (b); break;
         case EV_MENU: menu_selection (b); break;
-        case EV_SCROLL: if (b[0] == app.w_main) arrange_scroll (b); break;
+        case EV_SCROLL:
+          if (b[0] == app.w_main)
+            arrange_scroll (b);
+          else if (b[0] == app.w_score)
+            score_scroll (b);
+          break;
         case EV_LOSE_CARET: keys_release_all (); break;
         case EV_MESSAGE:
         case EV_MESSAGE_RECORDED:

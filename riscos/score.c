@@ -72,8 +72,11 @@
 #define DIM       0x8A8A8A
 #define TOP_PAD   24              /* OS units above the music */
 
-static const int zooms[] = { 12, 16, 20, 26, 32 };   /* OS units a staff space */
-static int zoom = 3;
+/* OS units a staff space: 20 is 100% (25% to see a whole orchestral
+   page; 0.4.3 had 60% to 160%) */
+static const int zooms[] = { 5, 6, 8, 10, 12, 16, 20, 26, 32 };
+#define NZOOMS ((int) (sizeof zooms / sizeof zooms[0]))
+static int zoom = 7;
 static char title[64] = "Score";
 static gr_engraving *eng;
 static int dirty = 1, built_track = -2, built_width, shown_bar = -1, last_sel = -2;
@@ -101,8 +104,9 @@ int score_create (void)
   memset (b, 0, sizeof b);
   b[0] = 200; b[1] = 120; b[2] = 1400; b[3] = 900;
   b[6] = -1;
-  b[7] = (int) 0xBF000002;      /* back, close, title, toggle, vertical scroll, adjust size
-                                   (0.4 to 0.4.2-test2 had 0xBD: no close icon) */
+  b[7] = (int) 0xBF000102;      /* back, close, title, toggle, vertical scroll, adjust size
+                                   (0.4 to 0.4.2-test2 had 0xBD: no close icon); Scroll_Request
+                                   events, so Ctrl + the wheel can zoom */
   ((unsigned char *) b)[32] = 7;  ((unsigned char *) b)[33] = 2;
   ((unsigned char *) b)[34] = 7;  ((unsigned char *) b)[35] = 0;   /* white work area */
   ((unsigned char *) b)[36] = 3;  ((unsigned char *) b)[37] = 1;
@@ -396,6 +400,42 @@ static int print_text (int x, int y, int size, const char *s, int bold)
   return w;
 }
 
+/* Text on the screen at a zoom under 100%, in Homerton as tall as the
+   score has it (size, OS units), so it shrinks with the music (the
+   desktop font would be four times too big at 25%); bold (style 1) or
+   italic (2). Its width; -1 if there's no such font. The fonts are kept
+   (a few sizes). */
+static int screen_scaled (int x, int y, int size, const char *s, int style)
+{
+  static int fh[8] = { -1, -1, -1, -1, -1, -1, -1, -1 }, fkey[8], next;
+  int pt16 = size * 16 * 2 / 5, key, i, f = -1, w = 0;    /* (2.5 OS units a point) */
+  if (pt16 < 16)
+    pt16 = 16;
+  key = pt16 * 4 + (style & 3);
+  for (i = 0; i < 8; i++)
+    if (fh[i] >= 0 && fkey[i] == key)
+      f = fh[i];
+  if (f < 0)
+    {
+      if (_swix (Font_FindFont, _INR (1, 5) | _OUT (0),
+                 style == 1 ? "Homerton.Bold" : style == 2 ? "Homerton.Medium.Oblique" : "Homerton.Medium",
+                 pt16, pt16, 0, 0, &f))
+        return -1;
+      if (fh[next] >= 0)
+        _swix (Font_LoseFont, _IN (0), fh[next]);
+      fh[next] = f;
+      fkey[next] = key;
+      next = (next + 1) % 8;
+    }
+  _swix (ColourTrans_SetFontColours, _INR (0, 3), f,
+         ((PAPER & 0xFFu) << 24) | (((PAPER >> 8) & 0xFFu) << 16) | (((PAPER >> 16) & 0xFFu) << 8),
+         ((INK & 0xFFu) << 24) | (((INK >> 8) & 0xFFu) << 16) | (((INK >> 16) & 0xFFu) << 8), 14);
+  _swix (Font_Paint, _INR (0, 4), f, s, (1 << 4) | (1 << 8), x, y);
+  if (!_swix (Font_ScanString, _INR (0, 4) | _OUT (3), f, s, 1 << 8, 0x7FFFFFFF, 0x7FFFFFFF, &w))
+    return w / 400;
+  return 0;
+}
+
 /* Bold (style 1) or italic (2) text on the screen: the desktop font's
    (Homerton.Bold or .Medium.Oblique at 12 point), found once. Its width;
    -1 if there's no such font (then bold is struck twice, a pixel apart,
@@ -432,7 +472,8 @@ static void score_text (int x, int y, int size, const char *s, int bold, int pri
   char piece[160];
   size_t n = 0;
   /* (a note as tall as the letters: the desktop font's are about 30 OS units) */
-  int scale = printing ? 60 : size > 0 ? 60 * 30 / size : 60;
+  int small = !printing && sp_os () < 20;   /* (under 100%: scaled, as the music) */
+  int scale = printing || small ? 60 : size > 0 ? 60 * 30 / size : 60;
   if (scale < 20) scale = 20;
   if (scale > 240) scale = 240;
   for (;; s++)
@@ -446,8 +487,11 @@ static void score_text (int x, int y, int size, const char *s, int bold, int pri
       piece[n] = 0;
       if (n)
         {
+          int sw;
           if (printing)
             x += print_text (x, y, size, piece, bold);
+          else if (small && (sw = screen_scaled (x, y, size, piece, bold)) >= 0)
+            x += sw;
           else
             {
               int bw = bold ? screen_bold (x, y, piece, bold) : -1;
@@ -747,22 +791,66 @@ void score_click (int *b)
     }
 }
 
-int score_key (int code)
+/* Zoom i (of score_zoom_pc's): laid out again for the window's width at
+   that size, the same part of the score still in view. */
+void score_set_zoom (int i)
 {
-  if ((code == '+' || code == '=') && zoom < (int) (sizeof zooms / sizeof zooms[0]) - 1)
-    zoom++;
-  else if ((code == '-' || code == '_') && zoom > 0)
-    zoom--;
-  else
-    return 0;
+  int st[9];
+  double at = 0;
+  if (i < 0 || i >= NZOOMS || i == zoom)
+    return;
+  st[0] = app.w_score;
+  if (app.score_open && eng && !_swix (Wimp_GetWindowState, _IN (1), st))
+    at = (double) -st[6] / (z_os (eng->height) + TOP_PAD);
+  zoom = i;
   dirty = 1;
   build ();
+  if (app.score_open && eng && !_swix (Wimp_GetWindowState, _IN (1), st))
+    {
+      st[6] = -(int) (at * (z_os (eng->height) + TOP_PAD));
+      _swix (Wimp_OpenWindow, _IN (1), st);
+    }
+}
+
+int score_key (int code)
+{
+  if (code == '+' || code == '=')
+    score_set_zoom (zoom + 1);
+  else if (code == '-' || code == '_')
+    score_set_zoom (zoom - 1);
+  else
+    return 0;
   return 1;
+}
+
+/* Zoom i's percentage, or -1 past the last. */
+int score_zoom_pc (int i)
+{
+  return i >= 0 && i < NZOOMS ? zooms[i] * 100 / 20 : -1;
 }
 
 int score_zoom (void)
 {
-  return zooms[zoom] * 100 / 20;
+  return zoom;
+}
+
+/* The wheel over the Score window (a Scroll_Request): with Ctrl held, a
+   size larger or smaller; else up and down (a notch three staff spaces'
+   worth, a page at a time with the scroll bar's page arrows). */
+void score_scroll (int *b)
+{
+  int ctrl = 0;
+  _swix (OS_Byte, _INR (0, 1) | _OUT (1), 121, 0x81, &ctrl);
+  if (ctrl && b[9])
+    {
+      score_set_zoom (zoom + (b[9] > 0 ? 1 : -1));
+      return;
+    }
+  {
+    int h = b[4] - b[2], line = zooms[zoom] * 3 < 32 ? 32 : zooms[zoom] * 3;
+    b[6] += b[9] == 2 || b[9] == -2 ? (b[9] > 0 ? h : -h) : b[9] * line;
+    _swix (Wimp_OpenWindow, _IN (1), b);
+  }
 }
 
 /* ---- printing --------------------------------------------------------------------- */
