@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.5 (not released yet)
+
+- Built with riscos-crossdev 1.14 and its UnixLib 5.0.3.12, which is
+  faster at comparing and searching text (strstr, strcmp, memcmp and
+  others), so large MuseScore and MusicXML files import a little
+  faster. 5.0.3.12 gives its own data word alignment, so Groove still
+  starts with alignment exceptions turned on.
+
 ## 0.4.4 (24 November 2026)
 
 - The Score window zooms out to 25% (it went no smaller than 60%), so a

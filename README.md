@@ -161,7 +161,7 @@ SoftMIDI or a SoundFont.
 
 ## Building
 
-With [riscos-crossdev](https://github.com/adyoull/riscos-crossdev) (v1.8.2 or
+With [riscos-crossdev](https://github.com/adyoull/riscos-crossdev) (v1.14 or
 later) checked out beside this directory:
 
 ```sh
